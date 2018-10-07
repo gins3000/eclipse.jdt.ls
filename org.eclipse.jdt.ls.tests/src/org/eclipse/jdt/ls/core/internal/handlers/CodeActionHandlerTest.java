@@ -10,11 +10,12 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.handlers;
 
+import static org.mockito.Mockito.when;
+
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
@@ -24,6 +25,7 @@ import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection;
 import org.eclipse.jdt.ls.core.internal.LanguageServerWorkingCopyOwner;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
+import org.eclipse.jdt.ls.core.internal.preferences.ClientPreferences;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -54,13 +56,19 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 	@Mock
 	private JavaClientConnection connection;
 
+	@Mock
+	private ClientPreferences clientPreferences;
+
 	@Override
 	@Before
 	public void setup() throws Exception{
 		importProjects("eclipse/hello");
 		project = WorkspaceHelper.getProject("hello");
 		wcOwner = new LanguageServerWorkingCopyOwner(connection);
-		server= new JDTLanguageServer(projectsManager, null);
+		server = new JDTLanguageServer(projectsManager, this.preferenceManager);
+
+		when(this.preferenceManager.getClientPreferences()).thenReturn(clientPreferences);
+		when(clientPreferences.isSupportedCodeActionKind(CodeActionKind.QuickFix)).thenReturn(true);
 	}
 
 	@Test
@@ -78,11 +86,11 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 		final Range range = getRange(unit, "java.sql");
 		params.setRange(range);
 		params.setContext(new CodeActionContext(Arrays.asList(getDiagnostic(Integer.toString(IProblem.UnusedImport), range))));
-		List<? extends CodeAction> codeActions = getCodeActions(params);
+		List<Either<Command, CodeAction>> codeActions = getCodeActions(params);
 		Assert.assertNotNull(codeActions);
 		Assert.assertEquals(2, codeActions.size());
-		Assert.assertEquals(codeActions.get(0).getKind(), CodeActionKind.QuickFix);
-		Command c = codeActions.get(0).getCommand();
+		Assert.assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
+		Command c = codeActions.get(0).getRight().getCommand();
 		Assert.assertEquals(CodeActionHandler.COMMAND_ID_APPLY_EDIT, c.getCommand());
 	}
 
@@ -101,11 +109,11 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 		final Range range = getRange(unit, "some str");
 		params.setRange(range);
 		params.setContext(new CodeActionContext(Arrays.asList(getDiagnostic(Integer.toString(IProblem.UnterminatedString), range))));
-		List<? extends CodeAction> codeActions = getCodeActions(params);
+		List<Either<Command, CodeAction>> codeActions = getCodeActions(params);
 		Assert.assertNotNull(codeActions);
 		Assert.assertEquals(1, codeActions.size());
-		Assert.assertEquals(codeActions.get(0).getKind(), CodeActionKind.QuickFix);
-		Command c = codeActions.get(0).getCommand();
+		Assert.assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
+		Command c = codeActions.get(0).getRight().getCommand();
 		Assert.assertEquals(CodeActionHandler.COMMAND_ID_APPLY_EDIT, c.getCommand());
 	}
 
@@ -124,7 +132,7 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 			CodeActionContext context = new CodeActionContext();
 			context.setDiagnostics(Collections.emptyList());
 			params.setContext(context);
-			List<? extends CodeAction> codeActions = getCodeActions(params);
+			List<Either<Command, CodeAction>> codeActions = getCodeActions(params);
 			Assert.assertNotNull(codeActions);
 			Assert.assertEquals(0, codeActions.size());
 		} finally {
@@ -148,11 +156,11 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 		final Range range = getRange(unit, ";");
 		params.setRange(range);
 		params.setContext(new CodeActionContext(Arrays.asList(getDiagnostic(Integer.toString(IProblem.SuperfluousSemicolon), range))));
-		List<? extends CodeAction> codeActions = getCodeActions(params);
+		List<Either<Command, CodeAction>> codeActions = getCodeActions(params);
 		Assert.assertNotNull(codeActions);
 		Assert.assertEquals(1, codeActions.size());
 		Assert.assertEquals(codeActions.get(0), CodeActionKind.QuickFix);
-		Command c = codeActions.get(0).getCommand();
+		Command c = getCommand(codeActions.get(0));
 		Assert.assertEquals(CodeActionHandler.COMMAND_ID_APPLY_EDIT, c.getCommand());
 		Assert.assertNotNull(c.getArguments());
 		Assert.assertTrue(c.getArguments().get(0) instanceof WorkspaceEdit);
@@ -169,8 +177,12 @@ public class CodeActionHandlerTest extends AbstractCompilationUnitBasedTest {
 		return JDTUtils.toRange(unit, start, search.length());
 	}
 
-	private List<CodeAction> getCodeActions(CodeActionParams params) {
-		return server.codeAction(params).join().stream().map(Either::getRight).collect(Collectors.toList());
+	private List<Either<Command, CodeAction>> getCodeActions(CodeActionParams params) {
+		return server.codeAction(params).join();
+	}
+
+	public Command getCommand(Either<Command, CodeAction> codeAction) {
+		return codeAction.isLeft() ? codeAction.getLeft() : codeAction.getRight().getCommand();
 	}
 
 	private Diagnostic getDiagnostic(String code, Range range){

@@ -42,6 +42,7 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.Assert;
 
 public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
@@ -49,27 +50,27 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 	private List<String> ignoredCommands;
 
 	protected void assertCodeActionExists(ICompilationUnit cu, Expected expected) throws Exception {
-		List<CodeAction> codeActions = evaluateCodeActions(cu);
-		for (CodeAction c : codeActions) {
+		List<Either<Command, CodeAction>> codeActions = evaluateCodeActions(cu);
+		for (Either<Command, CodeAction> c : codeActions) {
 			String actual = evaluateCodeActionCommand(c);
 			if (expected.content.equals(actual)) {
-				assertEquals(expected.name, c.getTitle());
+				assertEquals(expected.name, getCommand(c).getTitle());
 				return;
 			}
 		}
 		String res = "";
-		for (CodeAction command : codeActions) {
+		for (Either<Command, CodeAction> command : codeActions) {
 			if (res.length() > 0) {
 				res += '\n';
 			}
-			res += command.getTitle();
+			res += getCommand(command).getTitle();
 		}
 		assertEquals("Not found.", expected.name, res);
 	}
 
 	protected void assertCodeActionNotExists(ICompilationUnit cu, String label) throws Exception {
-		List<CodeAction> codeActionCommands = evaluateCodeActions(cu);
-		assertFalse("'" + label + "' should not be added to the code actions", codeActionCommands.stream().filter(ca -> ca.getTitle().equals(label)).findAny().isPresent());
+		List<Either<Command, CodeAction>> codeActionCommands = evaluateCodeActions(cu);
+		assertFalse("'" + label + "' should not be added to the code actions", codeActionCommands.stream().filter(ca -> getCommand(ca).getTitle().equals(label)).findAny().isPresent());
 	}
 
 	protected void assertCodeActions(ICompilationUnit cu, Collection<Expected> expected) throws Exception {
@@ -77,25 +78,25 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 	}
 
 	protected void assertCodeActions(ICompilationUnit cu, Expected... expected) throws Exception {
-		List<CodeAction> codeActions = evaluateCodeActions(cu);
+		List<Either<Command, CodeAction>> codeActions = evaluateCodeActions(cu);
 		if (codeActions.size() != expected.length) {
 			String res = "";
-			for (CodeAction command : codeActions) {
-				res += " '" + command.getTitle() + "'";
+			for (Either<Command, CodeAction> command : codeActions) {
+				res += " '" + getCommand(command).getTitle() + "'";
 			}
 			assertEquals("Number of code actions: " + res, expected.length, codeActions.size());
 		}
 
 		int k = 0;
 		String aStr = "", eStr = "", testContent = "";
-		for (CodeAction c : codeActions) {
+		for (Either<Command, CodeAction> c : codeActions) {
 			String actual = evaluateCodeActionCommand(c);
 			Expected e = expected[k++];
-			if (!e.name.equals(c.getTitle()) || !e.content.equals(actual)) {
-				aStr += '\n' + c.getTitle() + '\n' + actual;
+			if (!e.name.equals(getCommand(c).getTitle()) || !e.content.equals(actual)) {
+				aStr += '\n' + getCommand(c).getTitle() + '\n' + actual;
 				eStr += '\n' + e.name + '\n' + e.content;
 			}
-			testContent += generateTest(actual, c.getTitle(), k);
+			testContent += generateTest(actual, getCommand(c).getTitle(), k);
 		}
 		if (aStr.length() > 0) {
 			aStr += '\n' + testContent;
@@ -160,7 +161,7 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 		this.ignoredCommands = ignoredCommands;
 	}
 
-	protected List<CodeAction> evaluateCodeActions(ICompilationUnit cu) throws JavaModelException {
+	protected List<Either<Command, CodeAction>> evaluateCodeActions(ICompilationUnit cu) throws JavaModelException {
 
 		CompilationUnit astRoot = CoreASTProvider.getInstance().getAST(cu, CoreASTProvider.WAIT_YES, null);
 		IProblem[] problems = astRoot.getProblems();
@@ -177,12 +178,12 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 		context.setDiagnostics(DiagnosticsHandler.toDiagnosticsArray(cu, Arrays.asList(problems)));
 		parms.setContext(context);
 
-		List<CodeAction> codeActions = new CodeActionHandler().getCodeActionCommands(parms, new NullProgressMonitor());
+		List<Either<Command, CodeAction>> codeActions = new CodeActionHandler(this.preferenceManager).getCodeActionCommands(parms, new NullProgressMonitor());
 		if (this.ignoredCommands != null) {
-			List<CodeAction> filteredList = new ArrayList<>();
-			for (CodeAction codeAction : codeActions) {
+			List<Either<Command, CodeAction>> filteredList = new ArrayList<>();
+			for (Either<Command, CodeAction> codeAction : codeActions) {
 				for (String str : this.ignoredCommands) {
-					if (codeAction.getTitle().matches(str)) {
+					if (getCommand(codeAction).getTitle().matches(str)) {
 						filteredList.add(codeAction);
 						break;
 					}
@@ -193,9 +194,10 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 		return codeActions;
 	}
 
-	private String evaluateCodeActionCommand(CodeAction codeAction)
+	private String evaluateCodeActionCommand(Either<Command, CodeAction> codeAction)
 			throws BadLocationException, JavaModelException {
-		Command c = codeAction.getCommand();
+
+		Command c = codeAction.isLeft() ? codeAction.getLeft() : codeAction.getRight().getCommand();
 		Assert.assertEquals(CodeActionHandler.COMMAND_ID_APPLY_EDIT, c.getCommand());
 		Assert.assertNotNull(c.getArguments());
 		Assert.assertTrue(c.getArguments().get(0) instanceof WorkspaceEdit);
@@ -212,6 +214,10 @@ public class AbstractQuickFixTest extends AbstractProjectsManagerBasedTest {
 		doc.set(cu.getSource());
 
 		return TextEditUtil.apply(doc, entry.getValue());
+	}
+
+	public Command getCommand(Either<Command, CodeAction> codeAction) {
+		return codeAction.isLeft() ? codeAction.getLeft() : codeAction.getRight().getCommand();
 	}
 
 }
