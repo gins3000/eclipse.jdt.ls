@@ -37,6 +37,7 @@ import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.jdt.ls.core.internal.text.correction.QuickAssistProcessor;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
@@ -49,9 +50,8 @@ import org.eclipse.ltk.core.refactoring.TextChange;
 
 public class CodeActionHandler {
 
-	/**
-	 *
-	 */
+	public static final String REFACTOR_QUICKFIX = "refactor.quickfix";
+
 	public static final String COMMAND_ID_APPLY_EDIT = "java.apply.workspaceEdit";
 
 	private QuickFixProcessor quickFixProcessor = new QuickFixProcessor();
@@ -108,9 +108,13 @@ public class CodeActionHandler {
 		ICompilationUnit unit = proposal.getCompilationUnit();
 		Command command = new Command(name, COMMAND_ID_APPLY_EDIT, Arrays.asList(convertChangeToWorkspaceEdit(unit, proposal.getChange())));
 
-		if (preferenceManager.getClientPreferences().isSupportedCodeActionKind(proposal.getKind())) {
+		String kind = proposal.getKind();
+		if (preferenceManager.getClientPreferences().isSupportedCodeActionKind(kind)) {
 			CodeAction codeAction = new CodeAction(name);
-			codeAction.setKind(proposal.getKind());
+			if (CodeActionKind.QuickFix.equals(kind)) {
+				kind = REFACTOR_QUICKFIX;
+			}
+			codeAction.setKind(kind);
 			codeAction.setCommand(command);
 			codeAction.setDiagnostics(context.getDiagnostics());
 			return Either.forRight(codeAction);

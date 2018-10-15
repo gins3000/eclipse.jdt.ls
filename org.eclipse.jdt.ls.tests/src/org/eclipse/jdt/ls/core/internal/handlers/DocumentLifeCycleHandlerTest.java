@@ -127,7 +127,7 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 
 		List<Either<Command, CodeAction>> codeActions = getCodeActions(cu);
 		assertEquals(codeActions.size(), 1);
-		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
+		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionHandler.REFACTOR_QUICKFIX);
 	}
 
 	@Test
@@ -150,7 +150,7 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 
 		List<Either<Command, CodeAction>> codeActions = getCodeActions(cu);
 		assertEquals(codeActions.size(), 1);
-		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
+		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionHandler.REFACTOR_QUICKFIX);
 	}
 
 	protected List<Either<Command, CodeAction>> getCodeActions(ICompilationUnit cu) throws JavaModelException {
