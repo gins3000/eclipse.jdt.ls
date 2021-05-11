@@ -2,9 +2,11 @@
 /*******************************************************************************
 * Copyright (c) 2018 Microsoft Corporation and others.
 * All rights reserved. This program and the accompanying materials
-* are made available under the terms of the Eclipse Public License v1.0
+* are made available under the terms of the Eclipse Public License 2.0
 * which accompanies this distribution, and is available at
-* http://www.eclipse.org/legal/epl-v10.html
+* https://www.eclipse.org/legal/epl-2.0/
+*
+* SPDX-License-Identifier: EPL-2.0
 *
 * Contributors:
 *     Microsoft Corporation - initial API and implementation
@@ -62,6 +64,21 @@ public class NavigateToTypeDefinitionHandlerTest extends AbstractProjectsManager
 	}
 
 	@Test
+	public void testDisassembledSource() throws JavaModelException {
+		String className = "javax.tools.Tool";
+		int line = 6;
+		int column = 57;
+		String uri = ClassFileUtil.getURI(project, className);
+		TextDocumentIdentifier identifier = new TextDocumentIdentifier(uri);
+		List<? extends Location> definitions = handler.typeDefinition(new TextDocumentPositionParams(identifier, new Position(line, column)), monitor);
+		assertNotNull(definitions);
+		assertEquals("No definition found for " + className, 1, definitions.size());
+		assertNotNull(definitions.get(0).getUri());
+		assertEquals(3, definitions.get(0).getRange().getStart().getLine());
+		assertEquals(12, definitions.get(0).getRange().getStart().getCharacter());
+	}
+
+	@Test
 	public void testClassField() throws Exception {
 		testClass("java.Foo3", 17, 30);
 	}
@@ -86,7 +103,7 @@ public class NavigateToTypeDefinitionHandlerTest extends AbstractProjectsManager
 		List<? extends Location> definitions = handler
 				.typeDefinition(new TextDocumentPositionParams(identifier, new Position(line, column)), monitor);
 		assertNotNull(definitions);
-		assertEquals(1, definitions.size());
+		assertEquals("No definition found for " + className, 1, definitions.size());
 		assertNotNull(definitions.get(0).getUri());
 		assertTrue(definitions.get(0).getRange().getStart().getLine() >= 0);
 	}

@@ -3,4 +3,8 @@
 target/
 bin/
 **/lib/
+!org.eclipse.jdt.ls.tests/projects/singlefile/simple/lib/
+!org.eclipse.jdt.ls.tests/projects/maven/salut5/node_modules/
 maven-wrapper.jar
+*.iml
+.idea

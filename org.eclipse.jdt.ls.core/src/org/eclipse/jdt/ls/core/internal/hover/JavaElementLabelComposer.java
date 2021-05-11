@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -39,6 +41,7 @@ import org.eclipse.jdt.core.SourceRange;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.javadoc.JavaElementLinks;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -299,7 +302,11 @@ public class JavaElementLabelComposer {
 				}
 				String[] names= null;
 				if (getFlag(flags, JavaElementLabels.M_PARAMETER_NAMES) && method.exists()) {
-					names= method.getParameterNames();
+					try {
+						names= method.getParameterNames();
+					} catch (Exception e) {
+						names = method.getRawParameterNames();
+					}
 					if (isPolymorphic) {
 						// handled specially below
 					} else	if (types == null) {
@@ -453,7 +460,7 @@ public class JavaElementLabelComposer {
 		fBuilder.append(')');
 	}
 
-	private void appendAnnotationValue(IAnnotation annotation, Object value, int valueKind, long flags) throws JavaModelException {
+	public void appendAnnotationValue(IAnnotation annotation, Object value, int valueKind, long flags) throws JavaModelException {
 		// Note: To be bug-compatible with Javadoc from Java 5/6/7, we currently don't escape HTML tags in String-valued annotations.
 		if (value instanceof Object[]) {
 			fBuilder.append('{');

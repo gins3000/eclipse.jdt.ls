@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2011, 2013 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corrections.proposals.RefactoringCorrectionProposal;
  *
@@ -27,8 +29,8 @@ public class RefactoringCorrectionProposal extends LinkedCorrectionProposal {
 	private final Refactoring fRefactoring;
 	private RefactoringStatus fRefactoringStatus;
 
-	public RefactoringCorrectionProposal(String name, ICompilationUnit cu, Refactoring refactoring, int relevance) {
-		super(name, cu, null, relevance);
+	public RefactoringCorrectionProposal(String name, String kind, ICompilationUnit cu, Refactoring refactoring, int relevance) {
+		super(name, kind, cu, null, relevance);
 		fRefactoring = refactoring;
 	}
 
@@ -62,10 +64,14 @@ public class RefactoringCorrectionProposal extends LinkedCorrectionProposal {
 	 * @since 3.6
 	 */
 	@Override
-	public String getAdditionalProposalInfo(IProgressMonitor monitor) throws CoreException {
+	public Object getAdditionalProposalInfo(IProgressMonitor monitor) {
 		if (fRefactoringStatus != null && fRefactoringStatus.hasFatalError()) {
 			return fRefactoringStatus.getEntryWithHighestSeverity().getMessage();
 		}
 		return super.getAdditionalProposalInfo(monitor);
+	}
+
+	public Refactoring getRefactoring() {
+		return fRefactoring;
 	}
 }

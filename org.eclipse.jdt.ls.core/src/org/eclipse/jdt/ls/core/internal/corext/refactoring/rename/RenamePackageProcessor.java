@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.rename.RenamePackageProcessor
  *
@@ -20,6 +22,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.stream.Stream;
 import java.util.Set;
 
 import org.eclipse.core.resources.IContainer;
@@ -860,12 +863,18 @@ public class RenamePackageProcessor extends JavaRenameProcessor implements
 			//TODO: also for both fReferencesTo...; only check each CU once!
 			RefactoringStatus result= new RefactoringStatus();
 			fOccurrences= Checks.excludeCompilationUnits(fOccurrences, result);
+			fOccurrences= excludeInvalidResult(fOccurrences);
 			if (result.hasFatalError()) {
 				return result;
 			}
 
 			result.merge(Checks.checkCompileErrorsInAffectedFiles(fOccurrences));
 			return result;
+		}
+
+		private SearchResultGroup[] excludeInvalidResult(SearchResultGroup[] grouped) {
+			return Stream.of(grouped).filter(group -> group.getResource() != null && group.getResource().exists())
+				.toArray(SearchResultGroup[]::new);
 		}
 
 		/**

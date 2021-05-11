@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/proposals/TypeChangeCorrectionProposal.java
  *
@@ -49,18 +51,19 @@ import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite.ImportRewriteContext;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite.TypeLocation;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.jdt.internal.core.manipulation.BindingLabelProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
+import org.eclipse.jdt.internal.corext.fix.TypeParametersFixCore.InsertTypeArgumentsVisitor;
 import org.eclipse.jdt.internal.corext.refactoring.structure.ImportRemover;
-import org.eclipse.jdt.ls.core.internal.BindingLabelProvider;
 import org.eclipse.jdt.ls.core.internal.Messages;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.corext.dom.DimensionRewrite;
 import org.eclipse.jdt.ls.core.internal.corext.dom.TypeAnnotationRewrite;
-import org.eclipse.jdt.ls.core.internal.corext.fix.TypeParametersFix.InsertTypeArgumentsVisitor;
 import org.eclipse.jdt.ls.core.internal.corrections.CorrectionMessages;
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
+import org.eclipse.lsp4j.CodeActionKind;
 
 
 public class TypeChangeCorrectionProposal extends ASTRewriteCorrectionProposal {
@@ -84,7 +87,7 @@ public class TypeChangeCorrectionProposal extends ASTRewriteCorrectionProposal {
 
 	private TypeChangeCorrectionProposal(ICompilationUnit targetCU, IBinding binding, CompilationUnit astRoot, ITypeBinding newType, boolean isNewTypeVar, boolean offerSuperTypeProposals,
 			int relevance) {
-		super("", targetCU, null, relevance); //$NON-NLS-1$
+		super("", CodeActionKind.QuickFix, targetCU, null, relevance); //$NON-NLS-1$
 
 		Assert.isTrue(binding != null && (binding.getKind() == IBinding.METHOD || binding.getKind() == IBinding.VARIABLE) && Bindings.isDeclarationBinding(binding));
 
@@ -109,7 +112,7 @@ public class TypeChangeCorrectionProposal extends ASTRewriteCorrectionProposal {
 		if (isNewTypeVar) {
 			typeName= VAR_TYPE;
 		} else {
-			typeName= BindingLabelProvider.getBindingLabel(fNewType, JavaElementLabels.ALL_DEFAULT);
+			typeName= BindingLabelProviderCore.getBindingLabel(fNewType, JavaElementLabels.ALL_DEFAULT);
 		}
 		if (binding.getKind() == IBinding.VARIABLE) {
 			IVariableBinding varBinding= (IVariableBinding) binding;

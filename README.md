@@ -8,31 +8,41 @@ and can be used with any editor that supports the protocol, to offer good suppor
 
 * [Eclipse LSP4J](https://github.com/eclipse/lsp4j), the Java binding for the Language Server Protocol,
 * [Eclipse JDT](http://www.eclipse.org/jdt/), which provides Java support (code completion, references, diagnostics...),
-* [M2Eclipse](http://www.eclipse.org/m2e/) which provides Maven support,
-* [Buildship](https://github.com/eclipse/buildship) which provides Gradle support.
+* [M2Eclipse](http://www.eclipse.org/m2e/), which provides Maven support,
+* [Buildship](https://github.com/eclipse/buildship), which provides Gradle support.
 
 Features
 --------------
-* As you type reporting of parsing and compilation errors
+* Supports compiling projects from Java 1.5 through 16
+* Maven pom.xml project support
+* Limited Gradle support (Android projects are not supported)
+* Standalone Java files support
+* As-you-type reporting of syntax and compilation errors
 * Code completion
 * Javadoc hovers
-* Code actions / refactoring
-* Javadoc hovers
-* Code outline
-* Code navigation
-* Code lens (references/implementations)
-* Highlights
 * Organize imports
 * Type search
+* Code actions (quick fixes, source actions & refactorings)
+* Code outline
+* Code folding
+* Code navigation
+* Code lens (references/implementations)
 * Code formatting (on-type/selection/file)
-* Maven pom.xml project support
-* Java 9/10/11 support
-* Limited Gradle support (Android projects are not supported)
+* Code snippets
+* Highlights (semantic highlighting)
+* Semantic selection
+* Diagnostic tags
+* Call Hierarchy
+* Type Hierarchy
 * Annotation processing support (automatic for Maven projects)
+* Automatic source resolution for classes in jars with maven coordinates
+* Extensibility
 
 
 First Time Setup
 --------------
+**Pre-requisite: Java 11 must be installed on your machine and configured in Eclipse.**
+
 0. Fork and clone the repository
 1. Install [Eclipse IDE for Eclipse Committers](https://www.eclipse.org/downloads/packages/release/2018-09/r/eclipse-ide-eclipse-committers) that will have the most needed plugins already installed. Alternatively,
 you can get the [Eclipse IDE for Java developers](https://www.eclipse.org/downloads/packages/release/2018-09/r/eclipse-ide-java-developers)
@@ -49,17 +59,17 @@ detect the projects and import it properly.
 
 Building from the command line
 ----------------------------
+**Pre-requisite: Java 11 must be installed on your machine and accessible in the PATH.**
 
 The following command will install [Apache Maven](https://maven.apache.org/) if necessary, then build the server into the  `/org.eclipse.jdt.ls.product/target/repository` folder:
+
 ```bash
     $ ./mvnw clean verify
 ````
-Note: currently, the build can only run when launched with JDK 8. JDK 9 or more recent versions can be used to run the server though.
-
 
 Running from the command line
 ------------------------------
-1. Choose a connection type from "Managing connection types" section below, and then set those environment variables in your terminal prior to continuing
+1. Choose a connection type from "Managing connection types" section below, and then set those environment variables in your terminal or specify them as system properties with `-D` prior to continuing
 
 2. Make sure to build the server using the steps above in the "Building from command line" section
 
@@ -69,10 +79,6 @@ Running from the command line
 
 5. To start the server in the active terminal, run:
 ```bash
-java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=1044 -Declipse.application=org.eclipse.jdt.ls.core.id1 -Dosgi.bundles.defaultStartLevel=4 -Declipse.product=org.eclipse.jdt.ls.core.product -Dlog.level=ALL -noverify -Xmx1G -jar ./plugins/org.eclipse.equinox.launcher_1.5.200.v20180922-1751.jar -configuration ./config_linux -data /path/to/data
-```
-When running with JDK9 or more recent, you need to start the server with some extra parameters:
-```
 java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=1044 -Declipse.application=org.eclipse.jdt.ls.core.id1 -Dosgi.bundles.defaultStartLevel=4 -Declipse.product=org.eclipse.jdt.ls.core.product -Dlog.level=ALL -noverify -Xmx1G -jar ./plugins/org.eclipse.equinox.launcher_1.5.200.v20180922-1751.jar -configuration ./config_linux -data /path/to/data --add-modules=ALL-SYSTEM --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED
 ```
 
@@ -88,9 +94,9 @@ Managing connection types
 -------------------------
 The Java Language server supports sockets, named pipes, and standard streams of the server process
 to communicate with the client. Client can communicate its preferred connection methods
-by setting up environment variables.
+by setting up environment variables or alternatively using system properties (e.g. `-DCLIENT_PORT=...`)
 
-* To use a **plain socket**, set the following environment variables before starting the server:
+* To use a **plain socket**, set the following environment variables or system properties before starting the server:
    * `CLIENT_PORT`: the port of the socket to connect to
    * `CLIENT_HOST`: the host name to connect to. If not set, defaults to `localhost`.
 
@@ -120,7 +126,9 @@ This repository only contains the server implementation. Here are some known cli
 * [Oni](https://github.com/onivim/oni/wiki/Language-Support#java) : modern modal editing - powered by Neovim.
 * [LSP Java](https://github.com/emacs-lsp/lsp-java) : a Java LSP client for Emacs
 * [Eclipse Theia](https://github.com/theia-ide/theia) : Theia is a cloud & desktop IDE framework implemented in TypeScript
-* [coc-java](https://github.com/neoclide/coc-java): an extension for [coc.nvim](https://github.com/neoclide/coc.nvim)
+* [coc-java](https://github.com/neoclide/coc-java) : an extension for [coc.nvim](https://github.com/neoclide/coc.nvim)
+* [MS Paint IDE](https://github.com/MSPaintIDE/MSPaintIDE) : an IDE for programming in MS Paint
+* [nvim-jdtls](https://github.com/mfussenegger/nvim-jdtls) : an extension for Neovim
 
 Continuous Integration Builds
 -----------------------------
@@ -132,4 +140,4 @@ Milestone builds are available under [http://download.eclipse.org/jdtls/mileston
 
 License
 -------
-EPL 1.0, See [LICENSE](LICENSE) file.
+EPL 2.0, See [LICENSE](LICENSE) file.

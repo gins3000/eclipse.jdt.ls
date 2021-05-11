@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui.tests/ui/org/eclipse/jdt/ui/tests/quickfix/JavadocQuickFixTest.java
  *
@@ -12,7 +14,6 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.correction;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
@@ -969,7 +970,7 @@ public class JavadocQuickFixTest extends AbstractQuickFixTest {
 	public void testMissingFieldComment() throws Exception {
 		Map<String, String> original = fJProject1.getOptions(false);
 		HashMap<String, String> newOptions = new HashMap<>(original);
-		this.setIgnoredCommands(Arrays.asList("Extract.*"));
+		this.setIgnoredCommands("Extract.*");
 		// newOptions.put(JavaCore.COMPILER_PB_MISSING_JAVADOC_COMMENTS,
 		// JavaCore.ERROR);
 		// newOptions.put(JavaCore.COMPILER_PB_MISSING_JAVADOC_COMMENTS_VISIBILITY,

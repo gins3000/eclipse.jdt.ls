@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2008-2010 Sonatype, Inc.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *      Sonatype, Inc. - initial API and implementation
@@ -22,9 +24,10 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.jobs.IJobManager;
 import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.jdt.ls.core.internal.handlers.InitHandler;
+import org.eclipse.jdt.ls.core.internal.handlers.BaseInitHandler;
 import org.eclipse.m2e.core.internal.embedder.MavenExecutionContext;
 import org.eclipse.m2e.core.internal.jobs.IBackgroundProcessingQueue;
 
@@ -40,6 +43,7 @@ public final class JobHelpers {
 	}
 
 	private static final int POLLING_DELAY = 10;
+	public static final int MAX_TIME_MILLIS = 300000;
 
 	public static void waitForJobsToComplete() {
 		try {
@@ -134,12 +138,35 @@ public final class JobHelpers {
 		return queues;
 	}
 
+	public static void waitForWorkspaceJobsToComplete(IProgressMonitor monitor) throws InterruptedException {
+		IJobManager jobManager = Job.getJobManager();
+		jobManager.suspend();
+		try {
+			Job[] jobs = jobManager.find(null);
+			for(int i = 0; i < jobs.length; i++ ) {
+				if(jobs[i] instanceof WorkspaceJob || jobs[i].getClass().getName().endsWith("JREUpdateJob")) {
+					jobs[i].join();
+				}
+			}
+		} finally {
+			jobManager.resume();
+		}
+	}
+
 	private static void waitForBuildJobs() {
-		waitForJobs(BuildJobMatcher.INSTANCE, 300000);
+		waitForBuildJobs(MAX_TIME_MILLIS);
+	}
+
+	public static void waitForBuildJobs(int maxTimeMilis) {
+		waitForJobs(BuildJobMatcher.INSTANCE, maxTimeMilis);
 	}
 
 	public static void waitForInitializeJobs() {
-		waitForJobs(InitializeJobMatcher.INSTANCE, 300000);
+		waitForJobs(InitializeJobMatcher.INSTANCE, MAX_TIME_MILLIS);
+	}
+
+	public static void waitForDownloadSourcesJobs(int maxTimeMillis) {
+		waitForJobs(DownloadSourcesJobMatcher.INSTANCE, maxTimeMillis);
 	}
 
 	public static void waitForJobs(IJobMatcher matcher, int maxWaitMillis) {
@@ -173,6 +200,20 @@ public final class JobHelpers {
 		return null;
 	}
 
+	public static void waitForJobs(String jobFamily, IProgressMonitor monitor) {
+		try {
+			Job.getJobManager().join(jobFamily, monitor);
+		} catch (OperationCanceledException ignorable) {
+			// No need to pollute logs when query is cancelled
+		} catch (InterruptedException e) {
+			JavaLanguageServerPlugin.logException(e.getMessage(), e);
+		}
+	}
+
+	public static void waitForLoadingGradleVersionJob() {
+		waitForJobs(LoadingGradleVersionJobMatcher.INSTANCE, MAX_TIME_MILLIS);
+	}
+
 	interface IJobMatcher {
 
 		boolean matches(Job job);
@@ -197,7 +238,29 @@ public final class JobHelpers {
 
 		@Override
 		public boolean matches(Job job) {
-			return job.belongsTo(InitHandler.JAVA_LS_INITIALIZATION_JOBS);
+			return job.belongsTo(BaseInitHandler.JAVA_LS_INITIALIZATION_JOBS);
+		}
+
+	}
+
+	static class LoadingGradleVersionJobMatcher implements IJobMatcher {
+
+		public static final IJobMatcher INSTANCE = new LoadingGradleVersionJobMatcher();
+
+		@Override
+		public boolean matches(Job job) {
+			return job.getClass().getName().matches("org.eclipse.buildship.core.internal.util.gradle.PublishedGradleVersionsWrapper.LoadVersionsJob");
+		}
+
+	}
+
+	static class DownloadSourcesJobMatcher implements IJobMatcher {
+
+		public static final IJobMatcher INSTANCE = new DownloadSourcesJobMatcher();
+
+		@Override
+		public boolean matches(Job job) {
+			return ("org.eclipse.m2e.jdt.internal.DownloadSourcesJob".equals(job.getClass().getName()));
 		}
 
 	}

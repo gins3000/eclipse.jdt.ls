@@ -1,9 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2016-2018 Red Hat Inc. and others.
+ * Copyright (c) 2016-2020 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -22,6 +24,7 @@ import org.eclipse.jdt.ls.core.internal.lsp.ExecuteCommandProposedClient;
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams;
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse;
 import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.ConfigurationParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
@@ -54,6 +57,14 @@ public class JavaClientConnection {
 		 */
 		@JsonNotification("language/actionableNotification")
 		void sendActionableNotification(ActionableNotification notification);
+
+		/**
+		 * The event notification is sent from a server to a client to notify the
+		 * client certain events happened on the server side, eg. classpath was
+		 * updated, projects were imported.
+		 */
+		@JsonNotification("language/eventNotification")
+		void sendEventNotification(EventNotification notification);
 
 		/**
 		 * The progress report notification is sent from a server to be handled by the
@@ -162,6 +173,15 @@ public class JavaClientConnection {
 		client.sendActionableNotification(notification);
 	}
 
+	/**
+	 * Send a notification to the client when some certain events happen.
+	 * @See {@link org.eclipse.jdt.ls.core.internal.EventType} for all
+	 * possible event types.
+	 */
+	public void sendEventNotification(EventNotification notification) {
+		client.sendEventNotification(notification);
+	}
+
 	public void publishDiagnostics(PublishDiagnosticsParams diagnostics){
 		client.publishDiagnostics(diagnostics);
 	}
@@ -193,6 +213,13 @@ public class JavaClientConnection {
 	 */
 	public void registerCapability(RegistrationParams params) {
 		client.registerCapability(params);
+	}
+
+	/**
+	 * @see {@link LanguageClient#configuration(ConfigurationParams)}
+	 */
+	public List<Object> configuration(ConfigurationParams configurationParams) {
+		return this.client.configuration(configurationParams).join();
 	}
 
 	public void disconnect() {

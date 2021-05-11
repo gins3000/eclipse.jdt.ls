@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2018 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -104,7 +106,7 @@ public class CodeLensHandler {
 						try {
 							IDocument document = JsonRpcHelpers.toDocument(typeRoot.getBuffer());
 							int offset = document.getLineOffset(position.getLine()) + position.getCharacter();
-							locations = findImplementations((IType) element, offset, monitor);
+							locations = findImplementations(typeRoot, (IType) element, offset, monitor);
 						} catch (CoreException | BadLocationException e) {
 							JavaLanguageServerPlugin.logException(e.getMessage(), e);
 						}
@@ -125,12 +127,12 @@ public class CodeLensHandler {
 		return lens;
 	}
 
-	private List<Location> findImplementations(IType type, int offset, IProgressMonitor monitor) throws CoreException {
+	private List<Location> findImplementations(ITypeRoot root, IType type, int offset, IProgressMonitor monitor) throws CoreException {
 		//java.lang.Object is a special case. We need to minimize heavy cost of I/O,
 		// by avoiding opening all files from the Object hierarchy
 		boolean useDefaultLocation = "java.lang.Object".equals(type.getFullyQualifiedName());
 		ImplementationToLocationMapper mapper = new ImplementationToLocationMapper(preferenceManager.isClientSupportsClassFileContent(), useDefaultLocation);
-		ImplementationCollector<Location> searcher = new ImplementationCollector<>(new Region(offset, 0), type, mapper);
+		ImplementationCollector<Location> searcher = new ImplementationCollector<>(root, new Region(offset, 0), type, mapper);
 		return searcher.findImplementations(monitor);
 	}
 

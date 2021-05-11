@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Code copied from org.eclipse.jdt.internal.corext.javadoc.JavaDocLocations
  *
@@ -288,15 +290,15 @@ public class JavaDocLocations {
 		 * This breaks all clients that directly create such URLs.
 		 * We can't know what format is required, so we just guess by the project's compiler compliance.
 		 */
-		boolean is18OrHigher = JavaModelUtil.is18OrHigher(meth.getJavaProject());
-		buf.append(is18OrHigher ? '-' : '(');
+		boolean is1d8OrHigher = JavaModelUtil.is1d8OrHigher(meth.getJavaProject());
+		buf.append(is1d8OrHigher ? '-' : '(');
 		String[] params = meth.getParameterTypes();
 		IType declaringType = meth.getDeclaringType();
 		boolean isVararg = Flags.isVarargs(meth.getFlags());
 		int lastParam = params.length - 1;
 		for (int i = 0; i <= lastParam; i++) {
 			if (i != 0) {
-				buf.append(is18OrHigher ? "-" : ", "); //$NON-NLS-1$ //$NON-NLS-2$
+				buf.append(is1d8OrHigher ? "-" : ", "); //$NON-NLS-1$ //$NON-NLS-2$
 			}
 			String curr = Signature.getTypeErasure(params[i]);
 			String fullName = JavaModelUtil.getResolvedTypeName(curr, declaringType);
@@ -310,7 +312,7 @@ public class JavaDocLocations {
 					dim--;
 				}
 				while (dim > 0) {
-					buf.append(is18OrHigher ? ":A" : "[]"); //$NON-NLS-1$ //$NON-NLS-2$
+					buf.append(is1d8OrHigher ? ":A" : "[]"); //$NON-NLS-1$ //$NON-NLS-2$
 					dim--;
 				}
 				if (i == lastParam && isVararg) {
@@ -318,7 +320,7 @@ public class JavaDocLocations {
 				}
 			}
 		}
-		buf.append(is18OrHigher ? '-' : ')');
+		buf.append(is1d8OrHigher ? '-' : ')');
 	}
 
 	/**

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.ui.text.correction.ModifierCorrectionSubProcessor
  *
@@ -61,18 +63,18 @@ import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.eclipse.jdt.internal.corext.fix.CompilationUnitRewriteOperationsFixCore.CompilationUnitRewriteOperation;
 import org.eclipse.jdt.internal.corext.fix.LinkedProposalModelCore;
 import org.eclipse.jdt.internal.corext.fix.LinkedProposalPositionGroupCore;
+import org.eclipse.jdt.internal.corext.fix.UnimplementedCodeFixCore;
+import org.eclipse.jdt.internal.corext.fix.UnimplementedCodeFixCore.MakeTypeAbstractOperation;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.internal.corext.util.JdtFlags;
 import org.eclipse.jdt.internal.ui.text.correction.IProblemLocationCore;
-import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.IConstants;
 import org.eclipse.jdt.ls.core.internal.Messages;
 import org.eclipse.jdt.ls.core.internal.corext.dom.ModifierRewrite;
-import org.eclipse.jdt.ls.core.internal.corext.fix.UnimplementedCodeFix;
-import org.eclipse.jdt.ls.core.internal.corext.fix.UnimplementedCodeFix.MakeTypeAbstractOperation;
 import org.eclipse.jdt.ls.core.internal.corrections.CorrectionMessages;
 import org.eclipse.jdt.ls.core.internal.corrections.IInvocationContext;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.ASTRewriteCorrectionProposal;
-import org.eclipse.jdt.ls.core.internal.corrections.proposals.CUCorrectionProposal;
+import org.eclipse.jdt.ls.core.internal.corrections.proposals.ChangeCorrectionProposal;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.FixCorrectionProposal;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.IProposalRelevance;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.ModifierChangeCorrectionProposal;
@@ -81,6 +83,7 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.text.link.LinkedModeModel;
 import org.eclipse.jface.text.link.LinkedPosition;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.text.edits.MultiTextEdit;
 import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
@@ -95,7 +98,7 @@ public class ModifierCorrectionSubProcessor {
 	public static final int TO_NON_STATIC = 4;
 	public static final int TO_NON_FINAL = 5;
 
-	public static void addNonAccessibleReferenceProposal(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals, int kind, int relevance) throws CoreException {
+	public static void addNonAccessibleReferenceProposal(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals, int kind, int relevance) throws CoreException {
 		ICompilationUnit cu = context.getCompilationUnit();
 
 		ASTNode selectedNode = problem.getCoveringNode(context.getASTRoot());
@@ -226,7 +229,7 @@ public class ModifierCorrectionSubProcessor {
 		}
 	}
 
-	public static void addChangeOverriddenModifierProposal(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals, int kind) throws JavaModelException {
+	public static void addChangeOverriddenModifierProposal(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals, int kind) throws JavaModelException {
 		ICompilationUnit cu = context.getCompilationUnit();
 
 		ASTNode selectedNode = problem.getCoveringNode(context.getASTRoot());
@@ -337,7 +340,7 @@ public class ModifierCorrectionSubProcessor {
 	//		}
 	//	}
 	//
-	public static void addRemoveInvalidModifiersProposal(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals, int relevance) {
+	public static void addRemoveInvalidModifiersProposal(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals, int relevance) {
 		ICompilationUnit cu = context.getCompilationUnit();
 
 		ASTNode selectedNode = problem.getCoveringNode(context.getASTRoot());
@@ -498,7 +501,7 @@ public class ModifierCorrectionSubProcessor {
 		return Modifier.PUBLIC;
 	}
 
-	public static void addAbstractMethodProposals(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals) {
+	public static void addAbstractMethodProposals(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals) {
 		ICompilationUnit cu = context.getCompilationUnit();
 
 		CompilationUnit astRoot = context.getASTRoot();
@@ -550,7 +553,7 @@ public class ModifierCorrectionSubProcessor {
 			}
 
 			String label = CorrectionMessages.ModifierCorrectionSubProcessor_removeabstract_description;
-			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite, IProposalRelevance.REMOVE_ABSTRACT_MODIFIER);
+			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite, IProposalRelevance.REMOVE_ABSTRACT_MODIFIER);
 			proposals.add(proposal);
 		}
 
@@ -569,11 +572,11 @@ public class ModifierCorrectionSubProcessor {
 				ModifierRewrite.create(rewrite, decl).setModifiers(0, excluded, null);
 
 				String label = CorrectionMessages.ModifierCorrectionSubProcessor_removebody_description;
-				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite, IProposalRelevance.REMOVE_METHOD_BODY);
+				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite, IProposalRelevance.REMOVE_METHOD_BODY);
 				proposals.add(proposal);
 			}
 
-			if (JavaModelUtil.is18OrHigher(cu.getJavaProject()) && parentIsInterface) {
+			if (JavaModelUtil.is1d8OrHigher(cu.getJavaProject()) && parentIsInterface) {
 				{
 					// insert proposal to add static modifier
 					String label = Messages.format(CorrectionMessages.ModifierCorrectionSubProcessor_changemodifiertostatic_description, decl.getName());
@@ -606,17 +609,17 @@ public class ModifierCorrectionSubProcessor {
 		return modifierNode;
 	}
 
-	private static void addMakeTypeAbstractProposal(IInvocationContext context, TypeDeclaration parentTypeDecl, Collection<CUCorrectionProposal> proposals) {
-		MakeTypeAbstractOperation operation = new UnimplementedCodeFix.MakeTypeAbstractOperation(parentTypeDecl);
+	private static void addMakeTypeAbstractProposal(IInvocationContext context, TypeDeclaration parentTypeDecl, Collection<ChangeCorrectionProposal> proposals) {
+		MakeTypeAbstractOperation operation = new UnimplementedCodeFixCore.MakeTypeAbstractOperation(parentTypeDecl);
 
 		String label = Messages.format(CorrectionMessages.ModifierCorrectionSubProcessor_addabstract_description, BasicElementLabels.getJavaElementName(parentTypeDecl.getName().getIdentifier()));
-		UnimplementedCodeFix fix = new UnimplementedCodeFix(label, context.getASTRoot(), new CompilationUnitRewriteOperation[] { operation });
+		UnimplementedCodeFixCore fix = new UnimplementedCodeFixCore(label, context.getASTRoot(), new CompilationUnitRewriteOperation[] { operation });
 
 		FixCorrectionProposal proposal = new FixCorrectionProposal(fix, null, IProposalRelevance.MAKE_TYPE_ABSTRACT_FIX, context);
 		proposals.add(proposal);
 	}
 
-	public static void addAbstractTypeProposals(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals) {
+	public static void addAbstractTypeProposals(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals) {
 		CompilationUnit astRoot = context.getASTRoot();
 
 		ASTNode selectedNode = problem.getCoveringNode(astRoot);
@@ -917,7 +920,7 @@ public class ModifierCorrectionSubProcessor {
 				}
 				return edit;
 			} catch (BadLocationException e) {
-				throw new CoreException(new Status(IStatus.ERROR, JavaLanguageServerPlugin.PLUGIN_ID, IStatus.ERROR, e.getMessage(), e));
+				throw new CoreException(new Status(IStatus.ERROR, IConstants.PLUGIN_ID, IStatus.ERROR, e.getMessage(), e));
 			}
 		}
 	}
@@ -957,6 +960,40 @@ public class ModifierCorrectionSubProcessor {
 			}
 		}
 		return null;
+	}
+
+	public static void addSealedMissingModifierProposal(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals) {
+		if (proposals == null) {
+			return;
+		}
+		ASTNode selectedNode = problem.getCoveringNode(context.getASTRoot());
+		if (!(selectedNode instanceof SimpleName)) {
+			return;
+		}
+		if (!(((SimpleName) selectedNode).getParent() instanceof TypeDeclaration)) {
+			return;
+		}
+		TypeDeclaration typeDecl = (TypeDeclaration) ((SimpleName) selectedNode).getParent();
+		boolean isInterface = typeDecl.isInterface();
+
+		ICompilationUnit cu = context.getCompilationUnit();
+		ITypeBinding typeDeclBinding = typeDecl.resolveBinding();
+		int relevance = IProposalRelevance.CHANGE_MODIFIER_TO_FINAL;
+		String label;
+
+		if (!isInterface) {
+			// Add final modifier
+			label = Messages.format(CorrectionMessages.ModifierCorrectionSubProcessor_changemodifierto_final_description, typeDecl.getName());
+			proposals.add(new ModifierChangeCorrectionProposal(label, cu, typeDeclBinding, typeDecl, Modifier.FINAL, 0, relevance));
+		}
+
+		// Add sealed modifier
+		label = Messages.format(CorrectionMessages.ModifierCorrectionSubProcessor_changemodifierto_sealed_description, typeDecl.getName());
+		proposals.add(new ModifierChangeCorrectionProposal(label, cu, typeDeclBinding, typeDecl, Modifier.SEALED, 0, relevance));
+
+		// Add non-sealed modifier
+		label = Messages.format(CorrectionMessages.ModifierCorrectionSubProcessor_changemodifierto_nonsealed_description, typeDecl.getName());
+		proposals.add(new ModifierChangeCorrectionProposal(label, cu, typeDeclBinding, typeDecl, Modifier.NON_SEALED, 0, relevance));
 	}
 
 }

@@ -1,15 +1,22 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corporation and others.
+ * Copyright (c) 2000, 2019 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
  *     Ferenc Hechler, ferenc_hechler@users.sourceforge.net - 83258 [jar exporter] Deploy java application as executable jar
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal;
+
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFolder;
@@ -89,5 +96,13 @@ public class JavaProjectHelper {
 		System.arraycopy(oldEntries, 0, newEntries, 0, nEntries);
 		newEntries[nEntries] = cpe;
 		jproject.setRawClasspath(newEntries, null);
+	}
+
+	public static String toString(IClasspathEntry[] classpath) {
+		return Arrays.stream(classpath).map(cpe -> " - " + cpe.getPath().toString()).collect(Collectors.joining("\n"));
+	}
+
+	public static IClasspathEntry findJarEntry(IJavaProject jproject, String jarName) throws JavaModelException {
+		return Stream.of(jproject.getRawClasspath()).filter(cpe -> cpe.getEntryKind() == IClasspathEntry.CPE_LIBRARY || cpe.getPath() != null && Objects.equals(jarName, cpe.getPath().lastSegment())).findFirst().orElse(null);
 	}
 }

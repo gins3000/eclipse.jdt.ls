@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/UnresolvedElementsSubProcessor.java
  *
@@ -23,6 +25,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeRoot;
 import org.eclipse.jdt.core.JavaModelException;
@@ -44,6 +47,7 @@ import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.IPackageBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MemberValuePair;
@@ -64,6 +68,7 @@ import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SwitchCase;
+import org.eclipse.jdt.core.dom.SwitchExpression;
 import org.eclipse.jdt.core.dom.SwitchStatement;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.ThrowStatement;
@@ -76,18 +81,19 @@ import org.eclipse.jdt.core.dom.rewrite.ImportRewrite.ImportRewriteContext;
 import org.eclipse.jdt.core.manipulation.CodeStyleConfiguration;
 import org.eclipse.jdt.core.manipulation.TypeKinds;
 import org.eclipse.jdt.core.refactoring.CompilationUnitChange;
+import org.eclipse.jdt.internal.core.manipulation.BindingLabelProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.StubUtility;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.eclipse.jdt.internal.corext.dom.ScopeAnalyzer;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.internal.ui.text.correction.IProblemLocationCore;
-import org.eclipse.jdt.ls.core.internal.BindingLabelProvider;
 import org.eclipse.jdt.ls.core.internal.Messages;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
+import org.eclipse.jdt.ls.core.internal.contentassist.TypeFilter;
 import org.eclipse.jdt.ls.core.internal.corrections.CorrectionMessages;
 import org.eclipse.jdt.ls.core.internal.corrections.IInvocationContext;
 import org.eclipse.jdt.ls.core.internal.corrections.NameMatcher;
@@ -100,12 +106,13 @@ import org.eclipse.jdt.ls.core.internal.corrections.proposals.ChangeMethodSignat
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.ChangeMethodSignatureProposal.SwapDescription;
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
+import org.eclipse.lsp4j.CodeActionKind;
 
 
 public class UnresolvedElementsSubProcessor {
 
 	public static void getVariableProposals(IInvocationContext context, IProblemLocationCore problem,
-			IVariableBinding resolvedField, Collection<CUCorrectionProposal> proposals) throws CoreException {
+			IVariableBinding resolvedField, Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 
 		ICompilationUnit cu= context.getCompilationUnit();
 
@@ -141,7 +148,7 @@ public class UnresolvedElementsSubProcessor {
 			if (locationInParent == ExpressionMethodReference.EXPRESSION_PROPERTY) {
 				typeKind= TypeKinds.REF_TYPES;
 			} else if (locationInParent == MethodInvocation.EXPRESSION_PROPERTY) {
-				if (JavaModelUtil.is18OrHigher(cu.getJavaProject())) {
+				if (JavaModelUtil.is1d8OrHigher(cu.getJavaProject())) {
 					typeKind= TypeKinds.CLASSES | TypeKinds.INTERFACES | TypeKinds.ENUMS;
 				} else {
 					typeKind= TypeKinds.CLASSES;
@@ -172,8 +179,15 @@ public class UnresolvedElementsSubProcessor {
 					typeKind= TypeKinds.REF_TYPES;
 					suggestVariableProposals= false;
 				}
-			} else if (locationInParent == SwitchCase.EXPRESSION_PROPERTY) {
-				ITypeBinding switchExp= ((SwitchStatement) node.getParent().getParent()).getExpression().resolveTypeBinding();
+
+			} else if (locationInParent == SwitchCase.EXPRESSION_PROPERTY || locationInParent == SwitchCase.EXPRESSIONS2_PROPERTY) {
+				ASTNode caseParent = node.getParent().getParent();
+				ITypeBinding switchExp = null;
+				if (caseParent instanceof SwitchStatement) {
+					switchExp = ((SwitchStatement) caseParent).getExpression().resolveTypeBinding();
+				} else if (caseParent instanceof SwitchExpression) {
+					switchExp = ((SwitchExpression) caseParent).getExpression().resolveTypeBinding();
+				}
 				if (switchExp != null && switchExp.isEnum()) {
 					binding= switchExp;
 				}
@@ -258,7 +272,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addNewVariableProposals(ICompilationUnit cu, Name node, SimpleName simpleName,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		String name= simpleName.getIdentifier();
 		BodyDeclaration bodyDeclaration= ASTResolving.findParentBodyDeclaration(node, true);
 		int type= bodyDeclaration.getNodeType();
@@ -286,7 +300,7 @@ public class UnresolvedElementsSubProcessor {
 					rewrite.remove(statement, null);
 				}
 				String label= CorrectionMessages.UnresolvedElementsSubProcessor_removestatement_description;
-				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite,
+				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite,
 						IProposalRelevance.REMOVE_ASSIGNMENT);
 				proposals.add(proposal);
 			}
@@ -295,7 +309,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void addNewFieldProposals(ICompilationUnit cu, CompilationUnit astRoot, ITypeBinding binding,
 			ITypeBinding declaringTypeBinding, SimpleName simpleName, boolean isWriteAccess,
-			Collection<CUCorrectionProposal> proposals) throws JavaModelException {
+			Collection<ChangeCorrectionProposal> proposals) throws JavaModelException {
 		// new variables
 		ICompilationUnit targetCU;
 		ITypeBinding senderDeclBinding;
@@ -328,7 +342,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void addNewFieldForType(ICompilationUnit targetCU, ITypeBinding binding,
 			ITypeBinding senderDeclBinding, SimpleName simpleName, boolean isWriteAccess, boolean mustBeConst,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		String name= simpleName.getIdentifier();
 		String nameLabel= BasicElementLabels.getJavaElementName(name);
 		String label;
@@ -368,7 +382,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void addSimilarVariableProposals(ICompilationUnit cu, CompilationUnit astRoot, ITypeBinding binding,
 			IVariableBinding resolvedField, SimpleName node, boolean isWriteAccess,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		int kind= ScopeAnalyzer.VARIABLES | ScopeAnalyzer.CHECK_VISIBILITY;
 		if (!isWriteAccess) {
 			kind |= ScopeAnalyzer.METHODS; // also try to find similar methods
@@ -475,7 +489,7 @@ public class UnresolvedElementsSubProcessor {
 							String label = Messages.format(
 									CorrectionMessages.UnresolvedElementsSubProcessor_changetomethod_description,
 									org.eclipse.jdt.ls.core.internal.corrections.ASTResolving.getMethodSignature(curr));
-							ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite,
+							ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite,
 									IProposalRelevance.CHANGE_TO_METHOD);
 							newProposals.add(proposal);
 
@@ -541,7 +555,7 @@ public class UnresolvedElementsSubProcessor {
 
 
 	public static void getTypeProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		ICompilationUnit cu= context.getCompilationUnit();
 
 		ASTNode selectedNode= problem.getCoveringNode(context.getASTRoot());
@@ -596,7 +610,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addEnhancedForWithoutTypeProposals(ICompilationUnit cu, ASTNode selectedNode,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		if (selectedNode instanceof SimpleName && (selectedNode.getLocationInParent() == SimpleType.NAME_PROPERTY || selectedNode.getLocationInParent() == NameQualifiedType.NAME_PROPERTY)) {
 			ASTNode type= selectedNode.getParent();
 			if (type.getLocationInParent() == SingleVariableDeclaration.TYPE_PROPERTY) {
@@ -629,7 +643,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addSimilarTypeProposals(int kind, ICompilationUnit cu, Name node, int relevance,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		SimilarElement[] elements = SimilarElementsRequestor.findSimilarElement(cu, node, kind);
 
 		// try to resolve type in context -> highest severity
@@ -710,7 +724,7 @@ public class UnresolvedElementsSubProcessor {
 			}
 			ASTRewrite rewrite= ASTRewrite.create(node.getAST());
 			rewrite.replace(node, rewrite.createStringPlaceholder(simpleName, ASTNode.SIMPLE_TYPE), null);
-			proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite, relevance);
+			proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite, relevance);
 		}
 		if (importRewrite != null) {
 			proposal.setImportRewrite(importRewrite);
@@ -720,9 +734,9 @@ public class UnresolvedElementsSubProcessor {
 
 	static CUCorrectionProposal createTypeRefChangeFullProposal(ICompilationUnit cu, ITypeBinding binding, ASTNode node, int relevance) {
 		ASTRewrite rewrite= ASTRewrite.create(node.getAST());
-		String label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_change_full_type_description, BindingLabelProvider.getBindingLabel(binding, JavaElementLabels.ALL_DEFAULT));
+		String label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_change_full_type_description, BindingLabelProviderCore.getBindingLabel(binding, JavaElementLabels.ALL_DEFAULT));
 
-		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite, relevance);
+		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite, relevance);
 
 		ImportRewrite imports= proposal.createImportRewrite((CompilationUnit) node.getRoot());
 		Type type= imports.addImport(binding, node.getAST());
@@ -765,66 +779,66 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	public static void addNewTypeProposals(ICompilationUnit cu, Name refNode, int kind, int relevance,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		Name node= refNode;
-		//		do {
-		//			String typeName= ASTNodes.getSimpleNameIdentifier(node);
-		//			Name qualifier= null;
-		//			// only propose to create types for qualifiers when the name starts with upper case
-		//			boolean isPossibleName= isLikelyTypeName(typeName) || node == refNode;
-		//			if (isPossibleName) {
-		//				IPackageFragment enclosingPackage= null;
-		//				IType enclosingType= null;
-		//				if (node.isSimpleName()) {
-		//					enclosingPackage= (IPackageFragment) cu.getParent();
-		//					// don't suggest member type, user can select it in wizard
-		//				} else {
-		//					Name qualifierName= ((QualifiedName) node).getQualifier();
-		//					IBinding binding= qualifierName.resolveBinding();
-		//					if (binding != null && binding.isRecovered()) {
-		//						binding= null;
-		//					}
-		//					if (binding instanceof ITypeBinding) {
-		//						enclosingType=(IType) binding.getJavaElement();
-		//					} else if (binding instanceof IPackageBinding) {
-		//						qualifier= qualifierName;
-		//						enclosingPackage= (IPackageFragment) binding.getJavaElement();
-		//					} else {
-		//						IJavaElement[] res= cu.codeSelect(qualifierName.getStartPosition(), qualifierName.getLength());
-		//						if (res!= null && res.length > 0 && res[0] instanceof IType) {
-		//							enclosingType= (IType) res[0];
-		//						} else {
-		//							qualifier= qualifierName;
-		//							enclosingPackage= JavaModelUtil.getPackageFragmentRoot(cu).getPackageFragment(ASTResolving.getFullName(qualifierName));
-		//						}
-		//					}
-		//				}
-		//				int rel= relevance;
-		//				if (enclosingPackage != null && isLikelyPackageName(enclosingPackage.getElementName())) {
-		//					rel += 3;
-		//				}
-		//
-		//				if (enclosingPackage != null && !enclosingPackage.getCompilationUnit(typeName + JavaModelUtil.DEFAULT_CU_SUFFIX).exists()
-		//						|| enclosingType != null && !enclosingType.isReadOnly() && !enclosingType.getType(typeName).exists()) { // new member type
-		//					IJavaElement enclosing= enclosingPackage != null ? (IJavaElement) enclosingPackage : enclosingType;
-		//
-		//					if ((kind & TypeKinds.CLASSES) != 0) {
-		//						proposals.add(new NewCUUsingWizardProposal(cu, node, NewCUUsingWizardProposal.K_CLASS, enclosing, rel+3));
-		//					}
-		//					if ((kind & TypeKinds.INTERFACES) != 0) {
-		//						proposals.add(new NewCUUsingWizardProposal(cu, node, NewCUUsingWizardProposal.K_INTERFACE, enclosing, rel+2));
-		//					}
-		//					if ((kind & TypeKinds.ENUMS) != 0) {
-		//						proposals.add(new NewCUUsingWizardProposal(cu, node, NewCUUsingWizardProposal.K_ENUM, enclosing, rel));
-		//					}
-		//					if ((kind & TypeKinds.ANNOTATIONS) != 0) {
-		//						proposals.add(new NewCUUsingWizardProposal(cu, node, NewCUUsingWizardProposal.K_ANNOTATION, enclosing, rel + 1));
-		//						addNullityAnnotationTypesProposals(cu, node, proposals);
-		//					}
-		//				}
-		//			}
-		//			node= qualifier;
-		//		} while (node != null);
+		do {
+			String typeName = ASTNodes.getSimpleNameIdentifier(node);
+			Name qualifier = null;
+			// only propose to create types for qualifiers when the name starts with upper case
+			boolean isPossibleName = isLikelyTypeName(typeName) || node == refNode;
+			if (isPossibleName) {
+				IPackageFragment enclosingPackage = null;
+				IType enclosingType = null;
+				if (node.isSimpleName()) {
+					enclosingPackage = (IPackageFragment) cu.getParent();
+					// don't suggest member type, user can select it in wizard
+				} else {
+					Name qualifierName = ((QualifiedName) node).getQualifier();
+					IBinding binding = qualifierName.resolveBinding();
+					if (binding != null && binding.isRecovered()) {
+						binding = null;
+					}
+					if (binding instanceof ITypeBinding) {
+						enclosingType = (IType) binding.getJavaElement();
+					} else if (binding instanceof IPackageBinding) {
+						qualifier = qualifierName;
+						enclosingPackage = (IPackageFragment) binding.getJavaElement();
+					} else {
+						IJavaElement[] res = cu.codeSelect(qualifierName.getStartPosition(), qualifierName.getLength());
+						if (res != null && res.length > 0 && res[0] instanceof IType) {
+							enclosingType = (IType) res[0];
+						} else {
+							qualifier = qualifierName;
+							enclosingPackage = JavaModelUtil.getPackageFragmentRoot(cu).getPackageFragment(ASTResolving.getFullName(qualifierName));
+						}
+					}
+				}
+				int rel = relevance;
+				if (enclosingPackage != null && isLikelyPackageName(enclosingPackage.getElementName())) {
+					rel += 3;
+				}
+
+				if (enclosingPackage != null && !enclosingPackage.getCompilationUnit(typeName + JavaModelUtil.DEFAULT_CU_SUFFIX).exists()
+						|| enclosingType != null && !enclosingType.isReadOnly() && !enclosingType.getType(typeName).exists()) { // new member type
+					IJavaElement enclosing = enclosingPackage != null ? (IJavaElement) enclosingPackage : enclosingType;
+
+					if ((kind & TypeKinds.CLASSES) != 0) {
+						proposals.add(new NewCUProposal(cu, node, NewCUProposal.K_CLASS, enclosing, rel + 3));
+					}
+					if ((kind & TypeKinds.INTERFACES) != 0) {
+						proposals.add(new NewCUProposal(cu, node, NewCUProposal.K_INTERFACE, enclosing, rel + 2));
+					}
+					if ((kind & TypeKinds.ENUMS) != 0) {
+						proposals.add(new NewCUProposal(cu, node, NewCUProposal.K_ENUM, enclosing, rel));
+					}
+					if ((kind & TypeKinds.ANNOTATIONS) != 0) {
+						proposals.add(new NewCUProposal(cu, node, NewCUProposal.K_ANNOTATION, enclosing, rel + 1));
+						// TODO: addNullityAnnotationTypesProposals(cu, node, proposals);
+					}
+				}
+			}
+			node = qualifier;
+		} while (node != null);
 
 		// type parameter proposals
 		if (refNode.isSimpleName() && (kind & TypeKinds.VARIABLES)  != 0) {
@@ -861,7 +875,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	public static void getMethodProposals(IInvocationContext context, IProblemLocationCore problem,
-			boolean isOnlyParameterMismatch, Collection<CUCorrectionProposal> proposals) throws CoreException {
+			boolean isOnlyParameterMismatch, Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 
 		ICompilationUnit cu= context.getCompilationUnit();
 
@@ -942,7 +956,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addStaticImportFavoriteProposals(IInvocationContext context, SimpleName node, boolean isMethod,
-			Collection<CUCorrectionProposal> proposals) throws JavaModelException {
+			Collection<ChangeCorrectionProposal> proposals) throws JavaModelException {
 		IJavaProject project= context.getCompilationUnit().getJavaProject();
 		if (JavaModelUtil.is50OrHigher(project)) {
 			String[] favourites = PreferenceManager.getPrefs(context.getCompilationUnit().getResource())
@@ -977,7 +991,7 @@ public class UnresolvedElementsSubProcessor {
 					label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_add_static_import_description, elementLabel);
 				}
 
-				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label,
+				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix,
 						context.getCompilationUnit(), astRewrite, IProposalRelevance.ADD_STATIC_IMPORT);
 				proposal.setImportRewrite(importRewrite);
 				proposals.add(proposal);
@@ -988,7 +1002,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void addNewMethodProposals(ICompilationUnit cu, CompilationUnit astRoot, Expression sender,
 			List<Expression> arguments, boolean isSuperInvocation, ASTNode invocationNode, String methodName,
-			Collection<CUCorrectionProposal> proposals) throws JavaModelException {
+			Collection<ChangeCorrectionProposal> proposals) throws JavaModelException {
 		ITypeBinding nodeParentType= Bindings.getBindingOfParentType(invocationNode);
 		ITypeBinding binding= null;
 		if (sender != null) {
@@ -1008,7 +1022,7 @@ public class UnresolvedElementsSubProcessor {
 				ITypeBinding[] parameterTypes= getParameterTypes(arguments);
 				if (parameterTypes != null) {
 					String sig = org.eclipse.jdt.ls.core.internal.corrections.ASTResolving.getMethodSignature(methodName, parameterTypes, false);
-					boolean is18OrHigher= JavaModelUtil.is18OrHigher(targetCU.getJavaProject());
+					boolean is1d8OrHigher= JavaModelUtil.is1d8OrHigher(targetCU.getJavaProject());
 
 					boolean isSenderBindingInterface= senderDeclBinding.isInterface();
 					if (nodeParentType == senderDeclBinding) {
@@ -1016,7 +1030,7 @@ public class UnresolvedElementsSubProcessor {
 					} else {
 						label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_createmethod_other_description, new Object[] { sig, BasicElementLabels.getJavaElementName(senderDeclBinding.getName()) } );
 					}
-					if (is18OrHigher || !isSenderBindingInterface
+					if (is1d8OrHigher || !isSenderBindingInterface
 							|| (nodeParentType != senderDeclBinding && (!(sender instanceof SimpleName) || !((SimpleName) sender).getIdentifier().equals(senderDeclBinding.getName())))) {
 						proposals.add(new NewMethodCorrectionProposal(label, targetCU, invocationNode, arguments,
 								senderDeclBinding, IProposalRelevance.CREATE_METHOD));
@@ -1028,7 +1042,7 @@ public class UnresolvedElementsSubProcessor {
 							senderDeclBinding= Bindings.getBindingOfParentType(anonymDecl.getParent());
 							isSenderBindingInterface= senderDeclBinding.isInterface();
 							if (!senderDeclBinding.isAnonymous()) {
-								if (is18OrHigher || !isSenderBindingInterface) {
+								if (is1d8OrHigher || !isSenderBindingInterface) {
 									String[] args = new String[] { sig,
 											org.eclipse.jdt.ls.core.internal.corrections.ASTResolving.getTypeSignature(senderDeclBinding) };
 									label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_createmethod_other_description, args);
@@ -1044,7 +1058,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addMissingCastParentsProposal(ICompilationUnit cu, MethodInvocation invocationNode,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		Expression sender= invocationNode.getExpression();
 		if (sender instanceof ThisExpression) {
 			return;
@@ -1104,7 +1118,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static boolean useExistingParentCastProposal(ICompilationUnit cu, CastExpression expression,
 			Expression accessExpression, SimpleName accessSelector, ITypeBinding[] paramTypes,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		ITypeBinding castType= expression.getType().resolveBinding();
 		if (castType == null) {
 			return false;
@@ -1136,7 +1150,7 @@ public class UnresolvedElementsSubProcessor {
 			rewrite.replace(accessExpression, parents, null);
 
 			String label= CorrectionMessages.UnresolvedElementsSubProcessor_missingcastbrackets_description;
-			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite,
+			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite,
 					IProposalRelevance.ADD_PARENTHESES_AROUND_CAST);
 			proposals.add(proposal);
 			return true;
@@ -1146,7 +1160,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void addParameterMissmatchProposals(IInvocationContext context, IProblemLocationCore problem,
 			List<IMethodBinding> similarElements, ASTNode invocationNode, List<Expression> arguments,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		int nSimilarElements= similarElements.size();
 		ITypeBinding[] argTypes= getArgumentTypes(arguments);
 		if (argTypes == null || nSimilarElements == 0)  {
@@ -1171,7 +1185,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void doMoreParameters(IInvocationContext context, ASTNode invocationNode, ITypeBinding[] argTypes,
-			IMethodBinding methodBinding, Collection<CUCorrectionProposal> proposals) throws CoreException {
+			IMethodBinding methodBinding, Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		ITypeBinding[] paramTypes= methodBinding.getParameterTypes();
 		int k= 0, nSkipped= 0;
 		int diff= paramTypes.length - argTypes.length;
@@ -1270,7 +1284,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void doMoreArguments(IInvocationContext context, ASTNode invocationNode, List<Expression> arguments,
-			ITypeBinding[] argTypes, IMethodBinding methodRef, Collection<CUCorrectionProposal> proposals)
+			ITypeBinding[] argTypes, IMethodBinding methodRef, Collection<ChangeCorrectionProposal> proposals)
 					throws CoreException {
 		ITypeBinding[] paramTypes= methodRef.getParameterTypes();
 		int k= 0, nSkipped= 0;
@@ -1304,7 +1318,7 @@ public class UnresolvedElementsSubProcessor {
 			} else {
 				label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_removearguments_description, arg);
 			}
-			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, cu, rewrite,
+			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, rewrite,
 					IProposalRelevance.REMOVE_ARGUMENTS);
 			proposals.add(proposal);
 		}
@@ -1385,7 +1399,7 @@ public class UnresolvedElementsSubProcessor {
 
 	private static void doEqualNumberOfParameters(IInvocationContext context, ASTNode invocationNode,
 			IProblemLocationCore problem, List<Expression> arguments, ITypeBinding[] argTypes, IMethodBinding methodBinding,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		ITypeBinding[] paramTypes= methodBinding.getParameterTypes();
 		int[] indexOfDiff= new int[paramTypes.length];
 		int nDiffs= 0;
@@ -1435,7 +1449,7 @@ public class UnresolvedElementsSubProcessor {
 				}
 				if (castFixType != null) {
 					ASTRewriteCorrectionProposal proposal= TypeMismatchSubProcessor.createCastProposal(context, castFixType, nodeToCast, IProposalRelevance.CAST_ARGUMENT_1);
-					String castTypeName= BindingLabelProvider.getBindingLabel(castFixType, JavaElementLabels.ALL_DEFAULT);
+					String castTypeName= BindingLabelProviderCore.getBindingLabel(castFixType, JavaElementLabels.ALL_DEFAULT);
 					String[] arg= new String[] { getArgumentName(arguments, idx), castTypeName};
 					proposal.setDisplayName(Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_addargumentcast_description, arg));
 					proposals.add(proposal);
@@ -1459,7 +1473,7 @@ public class UnresolvedElementsSubProcessor {
 				{
 					String[] arg= new String[] { getArgumentName(arguments, idx1), getArgumentName(arguments, idx2) };
 					String label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_swaparguments_description, arg);
-					ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label,
+					ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix,
 							context.getCompilationUnit(), rewrite, IProposalRelevance.SWAP_ARGUMENTS);
 					proposals.add(proposal);
 				}
@@ -1580,7 +1594,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	private static void addQualifierToOuterProposal(IInvocationContext context, MethodInvocation invocationNode,
-			IMethodBinding binding, Collection<CUCorrectionProposal> proposals) {
+			IMethodBinding binding, Collection<ChangeCorrectionProposal> proposals) {
 		ITypeBinding declaringType= binding.getDeclaringClass();
 		ITypeBinding parentType= Bindings.getBindingOfParentType(invocationNode);
 		ITypeBinding currType= parentType;
@@ -1601,7 +1615,7 @@ public class UnresolvedElementsSubProcessor {
 
 		String label = Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_changetoouter_description,
 				org.eclipse.jdt.ls.core.internal.corrections.ASTResolving.getTypeSignature(currType));
-		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, context.getCompilationUnit(),
+		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, context.getCompilationUnit(),
 				rewrite, IProposalRelevance.QUALIFY_WITH_ENCLOSING_TYPE);
 
 		ImportRewrite imports= proposal.createImportRewrite(context.getASTRoot());
@@ -1627,7 +1641,7 @@ public class UnresolvedElementsSubProcessor {
 
 
 	public static void getConstructorProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		ICompilationUnit cu= context.getCompilationUnit();
 
 		CompilationUnit astRoot= context.getASTRoot();
@@ -1692,7 +1706,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	public static void getAmbiguousTypeReferenceProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		final ICompilationUnit cu= context.getCompilationUnit();
 		int offset= problem.getOffset();
 		int len= problem.getLength();
@@ -1700,13 +1714,13 @@ public class UnresolvedElementsSubProcessor {
 		IJavaElement[] elements= cu.codeSelect(offset, len);
 		for (int i= 0; i < elements.length; i++) {
 			IJavaElement curr= elements[i];
-			if (curr instanceof IType) {
+			if (curr instanceof IType && !TypeFilter.isFiltered((IType) curr)) {
 				String qualifiedTypeName= ((IType) curr).getFullyQualifiedName('.');
 
 				CompilationUnit root= context.getASTRoot();
 
 				String label= Messages.format(CorrectionMessages.UnresolvedElementsSubProcessor_importexplicit_description, BasicElementLabels.getJavaElementName(qualifiedTypeName));
-				ASTRewriteCorrectionProposal proposal= new ASTRewriteCorrectionProposal(label, cu, ASTRewrite.create(root.getAST()), IProposalRelevance.IMPORT_EXPLICIT);
+				ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, cu, ASTRewrite.create(root.getAST()), IProposalRelevance.IMPORT_EXPLICIT);
 
 				ImportRewrite imports= proposal.createImportRewrite(root);
 				imports.addImport(qualifiedTypeName);
@@ -1717,7 +1731,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	public static void getArrayAccessProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 
 		CompilationUnit root= context.getASTRoot();
 		ASTNode selectedNode= problem.getCoveringNode(root);
@@ -1746,7 +1760,7 @@ public class UnresolvedElementsSubProcessor {
 	}
 
 	public static void getAnnotationMemberProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		CompilationUnit astRoot= context.getASTRoot();
 		ICompilationUnit cu= context.getCompilationUnit();
 		ASTNode selectedNode= problem.getCoveringNode(astRoot);

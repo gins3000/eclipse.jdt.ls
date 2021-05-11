@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2018 TypeFox and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     TypeFox - initial API and implementation
@@ -19,6 +21,7 @@ public class JDTEnvironmentUtils {
 	public static final String CLIENT_PORT = "CLIENT_PORT";
 	public static final String CLIENT_HOST = "CLIENT_HOST";
 	public static final String DEFAULT_CLIENT_HOST = "localhost";
+	public static final String SYNTAX_SERVER_ID = "syntaxserver";
 
 	/**
 	 * Environment variable indicating that the JDT LS has to be started with a
@@ -66,4 +69,7 @@ public class JDTEnvironmentUtils {
 		return Boolean.parseBoolean(Environment.get(SOCKET_STREAM_DEBUG, "false")) && (Platform.inDebugMode() || Platform.inDevelopmentMode()) && getClientHost() != null && getClientPort() != null;
 	}
 
+	public static boolean isSyntaxServer() {
+		return Boolean.parseBoolean(Environment.get(SYNTAX_SERVER_ID, "false"));
+	}
 }

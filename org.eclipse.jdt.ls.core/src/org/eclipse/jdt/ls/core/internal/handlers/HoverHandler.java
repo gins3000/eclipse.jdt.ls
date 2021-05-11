@@ -1,15 +1,18 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.handlers;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -31,15 +34,22 @@ public class HoverHandler {
 	}
 
 	public Hover hover(TextDocumentPositionParams position, IProgressMonitor monitor) {
-		ITypeRoot unit = JDTUtils.resolveTypeRoot(position.getTextDocument().getUri());
-
-		List<Either<String, MarkedString>> content = null;
-		if (unit != null && !monitor.isCanceled()) {
-			content = computeHover(unit, position.getPosition().getLine(), position.getPosition().getCharacter(), monitor);
+		ITypeRoot unit = null;
+		try {
+			boolean returnCompilationUnit = preferenceManager == null ? false : preferenceManager.isClientSupportsClassFileContent() && (preferenceManager.getPreferences().isIncludeDecompiledSources());
+			unit = JDTUtils.resolveTypeRoot(position.getTextDocument().getUri(), returnCompilationUnit, monitor);
+			List<Either<String, MarkedString>> content = null;
+			if (unit != null && !monitor.isCanceled()) {
+				content = computeHover(unit, position.getPosition().getLine(), position.getPosition().getCharacter(), monitor);
+			} else {
+				content = Collections.singletonList(Either.forLeft(""));
+			}
+			Hover $ = new Hover();
+			$.setContents(content);
+			return $;
+		} finally {
+			JDTUtils.discardClassFileWorkingCopy(unit);
 		}
-		Hover $ = new Hover();
-		$.setContents(content);
-		return $;
 	}
 
 	private List<Either<String, MarkedString>> computeHover(ITypeRoot unit, int line, int column, IProgressMonitor monitor) {

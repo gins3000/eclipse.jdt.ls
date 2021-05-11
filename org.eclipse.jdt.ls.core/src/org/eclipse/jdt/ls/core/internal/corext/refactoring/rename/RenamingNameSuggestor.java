@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2011 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.rename.RenamingNameSuggestor
  *
@@ -12,6 +14,7 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.corext.refactoring.rename;
 
+import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,8 +22,6 @@ import org.eclipse.core.runtime.Assert;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.ls.core.internal.text.JavaWordIterator;
-
-import com.ibm.icu.text.BreakIterator;
 
 /**
  * This class contains methods for suggesting new names for variables or methods

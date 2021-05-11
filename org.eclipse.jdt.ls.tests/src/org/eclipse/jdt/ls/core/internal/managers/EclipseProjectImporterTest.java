@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -12,22 +14,28 @@ package org.eclipse.jdt.ls.core.internal.managers;
 
 import static org.eclipse.jdt.ls.core.internal.WorkspaceHelper.getProject;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.ProjectUtils;
+import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager.CHANGE_TYPE;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -163,6 +171,50 @@ public class EclipseProjectImporterTest extends AbstractProjectsManagerBasedTest
 		when(p.toString()).thenReturn(name);
 		when(root.getProject(name)).thenReturn(p);
 		return p;
+	}
+
+	@Test
+	public void testPreviewFeaturesDisabledByDefault() throws Exception {
+		String name = "java16";
+		importProjects("eclipse/" + name);
+		IProject project = getProject(name);
+		assertIsJavaProject(project);
+		assertHasErrors(project, "is a preview feature and disabled by default");
+	}
+
+	@Test
+	public void testPreviewFeaturesNotAvailable() throws Exception {
+		String name = "java12";
+		importProjects("eclipse/" + name);
+		IProject project = getProject(name);
+		assertIsJavaProject(project);
+		assertHasErrors(project, "Switch Expressions are supported from", "Arrow in case statement supported from");
+	}
+
+	@Test
+	public void testClasspath() throws Exception {
+		String name = "classpath";
+		importProjects("eclipse/" + name);
+		IProject project = getProject(name);
+		assertNull(project);
+	}
+
+	@Test
+	public void testDeleteClasspath() throws Exception {
+		String name = "classpath2";
+		importProjects("eclipse/" + name);
+		IProject project = getProject(name);
+		assertNotNull(project);
+		IFile dotClasspath = project.getFile(IJavaProject.CLASSPATH_FILE_NAME);
+		File file = dotClasspath.getRawLocation().toFile();
+		assertTrue(file.exists());
+		file.delete();
+		projectsManager.fileChanged(file.toPath().toUri().toString(), CHANGE_TYPE.DELETED);
+		waitForBackgroundJobs();
+		project = getProject(name);
+		assertFalse(ProjectUtils.isJavaProject(project));
+		IFile bin = project.getFile("bin");
+		assertFalse(bin.getRawLocation().toFile().exists());
 	}
 
 	@After

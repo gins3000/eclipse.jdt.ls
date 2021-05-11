@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Code copied from org.eclipse.jdt.internal.ui.text.java.OverrideCompletionProposal
  *
@@ -39,11 +41,11 @@ import org.eclipse.jdt.core.formatter.IndentManipulation;
 import org.eclipse.jdt.core.manipulation.CoreASTProvider;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.corext.codemanipulation.CodeGenerationSettings;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
+import org.eclipse.jdt.internal.corext.codemanipulation.StubUtility2Core;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.eclipse.jdt.internal.corext.dom.IASTSharedValues;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.StubUtility2;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.Document;
@@ -61,6 +63,7 @@ public class OverrideCompletionProposal {
 	private String fMethodName;
 	private String[] fParamTypes;
 	private ICompilationUnit fCompilationUnit;
+	private String replacementString;
 
 	public OverrideCompletionProposal(ICompilationUnit cu, String methodName, String[] paramTypes, String completionProposal) {
 		this.fCompilationUnit = cu;
@@ -72,6 +75,10 @@ public class OverrideCompletionProposal {
 		fParamTypes= paramTypes;
 		fMethodName= methodName;
 		fJavaProject= cu.getJavaProject();
+		StringBuilder buffer = new StringBuilder();
+		buffer.append(completionProposal);
+		buffer.append(" {};");
+		replacementString = buffer.toString();
 	}
 
 	private CompilationUnit getRecoveredAST(IDocument document, int offset, Document recoveredDocument) {
@@ -131,16 +138,16 @@ public class OverrideCompletionProposal {
 				methodToOverride= Bindings.findMethodInType(node.getAST().resolveWellKnownType("java.lang.Object"), fMethodName, fParamTypes); //$NON-NLS-1$
 			}
 			if (methodToOverride != null) {
-				CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(fJavaProject.getProject());
-				MethodDeclaration stub = StubUtility2.createImplementationStub(fCompilationUnit, rewrite, importRewrite,
-						context, methodToOverride, declaringType, settings, declaringType.isInterface(), declaringType,
+				CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(fCompilationUnit);
+				MethodDeclaration stub = StubUtility2Core.createImplementationStubCore(fCompilationUnit, rewrite, importRewrite,
+						context, methodToOverride, declaringType, settings, declaringType.isInterface(), node,
 						snippetStringSupport);
 				ListRewrite rewriter= rewrite.getListRewrite(node, descriptor);
 				rewriter.insertFirst(stub, null);
 
 				ITrackedNodePosition position= rewrite.track(stub);
 				try {
-					Map<String, String> options = fJavaProject.getOptions(true);
+					Map<String, String> options = fCompilationUnit.getOptions(true);
 
 					rewrite.rewriteAST(recoveredDocument, options).apply(recoveredDocument);
 
@@ -162,6 +169,9 @@ public class OverrideCompletionProposal {
 					JavaLanguageServerPlugin.logException("Unable to compute override proposal", exception);
 				}
 			}
+		}
+		if (result == null) {
+			return replacementString;
 		}
 		return result;
 	}

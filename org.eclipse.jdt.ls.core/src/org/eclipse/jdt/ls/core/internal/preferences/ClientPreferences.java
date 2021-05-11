@@ -1,9 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2017-2018 Red Hat Inc. and others.
+ * Copyright (c) 2017-2020 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -12,12 +14,17 @@ package org.eclipse.jdt.ls.core.internal.preferences;
 
 import static org.apache.commons.lang3.BooleanUtils.isTrue;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.lsp4j.ClientCapabilities;
+import org.eclipse.lsp4j.DiagnosticsTagSupport;
 import org.eclipse.lsp4j.DynamicRegistrationCapabilities;
 import org.eclipse.lsp4j.MarkupKind;
+import org.eclipse.lsp4j.ResourceOperationKind;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /**
  * A wrapper around {@link ClientCapabilities}
@@ -112,6 +119,10 @@ public class ClientPreferences {
 		return v3supported && capabilities.getWorkspace() != null && isDynamicRegistrationSupported(capabilities.getWorkspace().getDidChangeWatchedFiles());
 	}
 
+	public boolean isWorkspaceConfigurationSupported() {
+		return v3supported && capabilities.getWorkspace() != null && isTrue(capabilities.getWorkspace().getConfiguration());
+	}
+
 	public boolean isDocumentSymbolDynamicRegistered() {
 		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getDocumentSymbol());
 	}
@@ -140,8 +151,16 @@ public class ClientPreferences {
 		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getDocumentHighlight());
 	}
 
+	public boolean isFoldgingRangeDynamicRegistered() {
+		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getFoldingRange());
+	}
+
 	public boolean isImplementationDynamicRegistered() {
 		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getImplementation());
+	}
+
+	public boolean isSelectionRangeDynamicRegistered() {
+		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getSelectionRange());
 	}
 
 	public boolean isWillSaveRegistered() {
@@ -164,6 +183,94 @@ public class ClientPreferences {
 		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("classFileContentsSupport", "false").toString());
 	}
 
+	public boolean isOverrideMethodsPromptSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("overrideMethodsPromptSupport", "false").toString());
+	}
+
+	public boolean isHashCodeEqualsPromptSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("hashCodeEqualsPromptSupport", "false").toString());
+	}
+
+	public boolean isAdvancedOrganizeImportsSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("advancedOrganizeImportsSupport", "false").toString());
+	}
+
+	public boolean isGenerateToStringPromptSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("generateToStringPromptSupport", "false").toString());
+	}
+
+	public boolean isAdvancedGenerateAccessorsSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("advancedGenerateAccessorsSupport", "false").toString());
+	}
+
+	public boolean isGenerateConstructorsPromptSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("generateConstructorsPromptSupport", "false").toString());
+	}
+
+	public boolean isGenerateDelegateMethodsPromptSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("generateDelegateMethodsPromptSupport", "false").toString());
+	}
+
+	public boolean isAdvancedExtractRefactoringSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("advancedExtractRefactoringSupport", "false").toString());
+	}
+
+	public boolean isExtractMethodInferSelectionSupported() {
+		Object supportList = extendedClientCapabilities.getOrDefault("inferSelectionSupport", new ArrayList<>());
+		if (supportList instanceof List<?>) {
+			return ((List<?>)supportList).contains("extractMethod");
+		}
+		return false;
+	}
+
+	public boolean isExtractVariableInferSelectionSupported() {
+		Object supportList = extendedClientCapabilities.getOrDefault("inferSelectionSupport", new ArrayList<>());
+		if (supportList instanceof List<?>) {
+			return ((List<?>)supportList).contains("extractVariable");
+		}
+		return false;
+	}
+
+	public boolean isExtractFieldInferSelectionSupported() {
+		Object supportList = extendedClientCapabilities.getOrDefault("inferSelectionSupport", new ArrayList<>());
+		if (supportList instanceof List<?>) {
+			return ((List<?>)supportList).contains("extractField");
+		}
+		return false;
+	}
+
+	public boolean isAdvancedIntroduceParameterRefactoringSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("advancedIntroduceParameterRefactoringSupport", "false").toString());
+	}
+
+	public boolean isMoveRefactoringSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("moveRefactoringSupport", "false").toString());
+	}
+
+	public boolean isClientHoverProviderRegistered() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("clientHoverProvider", "false").toString());
+	}
+
+	public boolean isClientDocumentSymbolProviderRegistered() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("clientDocumentSymbolProvider", "false").toString());
+	}
+
+	public boolean isActionableNotificationSupported() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("actionableNotificationSupported", "false").toString());
+	}
+
+	public boolean isActionableRuntimeNotificationSupport() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("actionableRuntimeNotificationSupport", "false").toString());
+	}
+
+	public boolean isGradleChecksumWrapperPromptSupport() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("gradleChecksumWrapperPromptSupport", "false").toString());
+	}
+
+	public boolean isResolveAdditionalTextEditsSupport() {
+		return Boolean.parseBoolean(extendedClientCapabilities.getOrDefault("resolveAdditionalTextEditsSupport", "false").toString());
+	}
+
 	public boolean isSupportsCompletionDocumentationMarkdown() {
 		//@formatter:off
 		return v3supported && capabilities.getTextDocument().getCompletion() != null
@@ -173,8 +280,20 @@ public class ClientPreferences {
 		//@formatter:on
 	}
 
+	@Deprecated
 	public boolean isWorkspaceEditResourceChangesSupported() {
 		return capabilities.getWorkspace() != null && capabilities.getWorkspace().getWorkspaceEdit() != null && isTrue(capabilities.getWorkspace().getWorkspaceEdit().getResourceChanges());
+	}
+
+	public boolean isResourceOperationSupported() {
+		//@formatter:off
+		return capabilities.getWorkspace() != null
+				&& capabilities.getWorkspace().getWorkspaceEdit() != null
+				&& capabilities.getWorkspace().getWorkspaceEdit().getResourceOperations() != null
+				&& capabilities.getWorkspace().getWorkspaceEdit().getResourceOperations().contains(ResourceOperationKind.Create)
+				&& capabilities.getWorkspace().getWorkspaceEdit().getResourceOperations().contains(ResourceOperationKind.Rename)
+				&& capabilities.getWorkspace().getWorkspaceEdit().getResourceOperations().contains(ResourceOperationKind.Delete);
+		//@formatter:on
 	}
 
 	/**
@@ -188,6 +307,54 @@ public class ClientPreferences {
 				&& capabilities.getTextDocument().getDocumentSymbol() != null
 				&& capabilities.getTextDocument().getDocumentSymbol().getHierarchicalDocumentSymbolSupport() != null
 				&& capabilities.getTextDocument().getDocumentSymbol().getHierarchicalDocumentSymbolSupport().booleanValue();
+		//@formatter:on
+	}
+
+	/**
+	 * {@code true} if the client has explicitly set the
+	 * {@code textDocument.codeAction.codeActionLiteralSupport.codeActionKind.valueSet}
+	 * value. Otherwise, {@code false}.
+	 */
+	public boolean isSupportedCodeActionKind(String kind) {
+		//@formatter:off
+		return v3supported && capabilities.getTextDocument().getCodeAction() != null
+				&& capabilities.getTextDocument().getCodeAction().getCodeActionLiteralSupport() != null
+				&& capabilities.getTextDocument().getCodeAction().getCodeActionLiteralSupport().getCodeActionKind() != null
+				&& capabilities.getTextDocument().getCodeAction().getCodeActionLiteralSupport().getCodeActionKind().getValueSet() != null
+				&& capabilities.getTextDocument().getCodeAction().getCodeActionLiteralSupport().getCodeActionKind().getValueSet()
+				.stream().filter(k -> kind.startsWith(k)).findAny().isPresent();
+		//@formatter:on
+	}
+
+	/**
+	 * {@code true} if the client has explicitly set the
+	 * {@code textDocument.publishDiagnostics.tagSupport} to
+	 * {@code true} when initializing the LS. Otherwise, {@code false}.
+	 */
+	public boolean isDiagnosticTagSupported() {
+		//@formatter:off
+		return v3supported && capabilities.getTextDocument().getPublishDiagnostics() != null
+				&& capabilities.getTextDocument().getPublishDiagnostics().getTagSupport() != null
+				&& isTagSupported(capabilities.getTextDocument().getPublishDiagnostics().getTagSupport());
+		//@formatter:on
+	}
+
+	private boolean isTagSupported(Either<Boolean, DiagnosticsTagSupport> tagSupport) {
+		return tagSupport.isLeft() ? tagSupport.getLeft() : tagSupport.getRight().getValueSet() != null;
+	}
+
+	public boolean isCallHierarchyDynamicRegistered() {
+		return v3supported && isDynamicRegistrationSupported(capabilities.getTextDocument().getCallHierarchy());
+	}
+
+	public boolean isResolveCodeActionSupported() {
+		//@formatter:off
+		return v3supported && capabilities.getTextDocument().getCodeAction() != null
+			&& capabilities.getTextDocument().getCodeAction().getDataSupport() != null
+			&& capabilities.getTextDocument().getCodeAction().getDataSupport().booleanValue()
+			&& capabilities.getTextDocument().getCodeAction().getResolveSupport() != null
+			&& capabilities.getTextDocument().getCodeAction().getResolveSupport().getProperties() != null
+			&& capabilities.getTextDocument().getCodeAction().getResolveSupport().getProperties().contains("edit");
 		//@formatter:on
 	}
 }

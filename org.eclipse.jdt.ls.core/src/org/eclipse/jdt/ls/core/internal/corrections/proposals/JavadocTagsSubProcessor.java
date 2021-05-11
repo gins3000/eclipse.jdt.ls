@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/JavadocTagsSubProcessor.java
  *
@@ -66,6 +68,7 @@ import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.text.IRegion;
 import org.eclipse.jface.text.TextUtilities;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.text.edits.InsertEdit;
 import org.eclipse.text.edits.TextEdit;
 import org.eclipse.text.edits.TextEditGroup;
@@ -82,7 +85,7 @@ public class JavadocTagsSubProcessor {
 		private final String fComment;
 
 		private AddJavadocCommentProposal(String name, ICompilationUnit cu, int relevance, int insertPosition, String comment) {
-			super(name, cu, relevance);
+			super(name, CodeActionKind.QuickFix, cu, null, relevance);
 			fInsertPosition= insertPosition;
 			fComment= comment;
 		}
@@ -91,12 +94,12 @@ public class JavadocTagsSubProcessor {
 		protected void addEdits(IDocument document, TextEdit rootEdit) throws CoreException {
 			try {
 				String lineDelimiter= TextUtilities.getDefaultLineDelimiter(document);
-				final IJavaProject project= getCompilationUnit().getJavaProject();
+				final ICompilationUnit unit= getCompilationUnit();
 				IRegion region= document.getLineInformationOfOffset(fInsertPosition);
 
 				String lineContent= document.get(region.getOffset(), region.getLength());
-				String indentString= Strings.getIndentString(lineContent, project);
-				String str= Strings.changeIndent(fComment, 0, project, indentString, lineDelimiter);
+				String indentString= Strings.getIndentString(lineContent, unit);
+				String str= Strings.changeIndent(fComment, 0, unit, indentString, lineDelimiter);
 				InsertEdit edit= new InsertEdit(fInsertPosition, str);
 				rootEdit.addChild(edit);
 				if (fComment.charAt(fComment.length() - 1) != '\n') {
@@ -115,7 +118,7 @@ public class JavadocTagsSubProcessor {
 		private final ASTNode fMissingNode;
 
 		public AddMissingJavadocTagProposal(String label, ICompilationUnit cu, BodyDeclaration bodyDecl, ASTNode missingNode, int relevance) {
-			super(label, cu, null, relevance);
+			super(label, CodeActionKind.QuickFix, cu, null, relevance);
 			fBodyDecl= bodyDecl;
 			fMissingNode= missingNode;
 		}
@@ -210,7 +213,7 @@ public class JavadocTagsSubProcessor {
 		private final BodyDeclaration fBodyDecl;
 
 		public AddAllMissingJavadocTagsProposal(String label, ICompilationUnit cu, BodyDeclaration bodyDecl, int relevance) {
-			super(label, cu, null, relevance);
+			super(label, CodeActionKind.QuickFix, cu, null, relevance);
 			fBodyDecl= bodyDecl;
 		}
 
@@ -326,7 +329,7 @@ public class JavadocTagsSubProcessor {
 
 	}
 
-	public static void getMissingJavadocTagProposals(IInvocationContext context, IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals) {
+	public static void getMissingJavadocTagProposals(IInvocationContext context, IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals) {
 		ASTNode node= problem.getCoveringNode(context.getASTRoot());
 		if (node == null) {
 			return;
@@ -371,7 +374,7 @@ public class JavadocTagsSubProcessor {
 	}
 
 	public static void getUnusedAndUndocumentedParameterOrExceptionProposals(IInvocationContext context,
-			IProblemLocationCore problem, Collection<CUCorrectionProposal> proposals) {
+			IProblemLocationCore problem, Collection<ChangeCorrectionProposal> proposals) {
 		ICompilationUnit cu= context.getCompilationUnit();
 		IJavaProject project= cu.getJavaProject();
 
@@ -412,7 +415,7 @@ public class JavadocTagsSubProcessor {
 	}
 
 	public static void getMissingJavadocCommentProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) throws CoreException {
+			Collection<ChangeCorrectionProposal> proposals) throws CoreException {
 		ASTNode node= problem.getCoveringNode(context.getASTRoot());
 		if (node == null) {
 			return;
@@ -656,7 +659,7 @@ public class JavadocTagsSubProcessor {
 	}
 
 	public static void getRemoveJavadocTagProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		ASTNode node= problem.getCoveringNode(context.getASTRoot());
 		while (node != null && !(node instanceof TagElement)) {
 			node= node.getParent();
@@ -668,12 +671,12 @@ public class JavadocTagsSubProcessor {
 		rewrite.remove(node, null);
 
 		String label= CorrectionMessages.JavadocTagsSubProcessor_removetag_description;
-		proposals.add(new ASTRewriteCorrectionProposal(label, context.getCompilationUnit(), rewrite,
+		proposals.add(new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, context.getCompilationUnit(), rewrite,
 				IProposalRelevance.REMOVE_TAG));
 	}
 
 	public static void getInvalidQualificationProposals(IInvocationContext context, IProblemLocationCore problem,
-			Collection<CUCorrectionProposal> proposals) {
+			Collection<ChangeCorrectionProposal> proposals) {
 		ASTNode node= problem.getCoveringNode(context.getASTRoot());
 		if (!(node instanceof Name)) {
 			return;
@@ -690,7 +693,7 @@ public class JavadocTagsSubProcessor {
 		rewrite.replace(name, ast.newName(typeBinding.getQualifiedName()), null);
 
 		String label= CorrectionMessages.JavadocTagsSubProcessor_qualifylinktoinner_description;
-		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, context.getCompilationUnit(),
+		ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, context.getCompilationUnit(),
 				rewrite, IProposalRelevance.QUALIFY_INNER_TYPE_NAME);
 
 		proposals.add(proposal);

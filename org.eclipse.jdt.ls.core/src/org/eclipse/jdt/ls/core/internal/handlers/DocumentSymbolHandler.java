@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -34,8 +36,10 @@ import java.util.stream.Stream;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.jdt.core.Flags;
+import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
+import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IParent;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeRoot;
@@ -47,6 +51,7 @@ import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
@@ -54,6 +59,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.xtext.xbase.lib.Exceptions;
 
 public class DocumentSymbolHandler {
+	private static Range DEFAULT_RANGE = new Range(new Position(0, 0), new Position(0, 0));
 
 	private boolean hierarchicalDocumentSymbolSupported;
 
@@ -64,7 +70,7 @@ public class DocumentSymbolHandler {
 	public List<Either<SymbolInformation, DocumentSymbol>> documentSymbol(DocumentSymbolParams params, IProgressMonitor monitor) {
 
 		ITypeRoot unit = JDTUtils.resolveTypeRoot(params.getTextDocument().getUri());
-		if (unit == null) {
+		if (unit == null || !unit.exists()) {
 			return Collections.emptyList();
 		}
 
@@ -84,7 +90,11 @@ public class DocumentSymbolHandler {
 			collectChildren(unit, elements, symbols, monitor);
 			return symbols.toArray(new SymbolInformation[symbols.size()]);
 		} catch (JavaModelException e) {
-			JavaLanguageServerPlugin.logException("Problem getting outline for" + unit.getElementName(), e);
+			if (!unit.exists()) {
+				JavaLanguageServerPlugin.logError("Problem getting outline for " + unit.getElementName() + ": File not found.");
+			} else {
+				JavaLanguageServerPlugin.logException("Problem getting outline for " + unit.getElementName(), e);
+			}
 		}
 		return new SymbolInformation[0];
 	}
@@ -128,7 +138,11 @@ public class DocumentSymbolHandler {
 		} catch (OperationCanceledException e) {
 			logInfo("User abort while collecting the document symbols.");
 		} catch (JavaModelException e) {
-			JavaLanguageServerPlugin.logException("Problem getting outline for" + unit.getElementName(), e);
+			if (!unit.exists()) {
+				JavaLanguageServerPlugin.logError("Problem getting outline for " + unit.getElementName() + ": File not found.");
+			} else {
+				JavaLanguageServerPlugin.logException("Problem getting outline for " + unit.getElementName(), e);
+			}
 		}
 		return emptyList();
 	}
@@ -171,11 +185,13 @@ public class DocumentSymbolHandler {
 	}
 
 	private Range getRange(IJavaElement element) throws JavaModelException {
-		return JDTUtils.toLocation(element, FULL_RANGE).getRange();
+		Location location = JDTUtils.toLocation(element, FULL_RANGE);
+		return location == null ? DEFAULT_RANGE : location.getRange();
 	}
 
 	private Range getSelectionRange(IJavaElement element) throws JavaModelException {
-		return JDTUtils.toLocation(element).getRange();
+		Location location = JDTUtils.toLocation(element);
+		return location == null ? DEFAULT_RANGE : location.getRange();
 	}
 
 	private boolean isDeprecated(IJavaElement element) throws JavaModelException {
@@ -226,31 +242,61 @@ public class DocumentSymbolHandler {
 
 	public static SymbolKind mapKind(IJavaElement element) {
 		switch (element.getElementType()) {
+			case IJavaElement.TYPE:
+				try {
+					IType type = (IType)element;
+					if (type.isInterface()) {
+						return SymbolKind.Interface;
+					}
+					else if (type.isEnum()) {
+						return SymbolKind.Enum;
+					}
+				} catch (JavaModelException ignore) {
+				}
+				return SymbolKind.Class;
 		case IJavaElement.ANNOTATION:
 			return SymbolKind.Property; // TODO: find a better mapping
 		case IJavaElement.CLASS_FILE:
 		case IJavaElement.COMPILATION_UNIT:
 			return SymbolKind.File;
 		case IJavaElement.FIELD:
+			IField field = (IField) element;
+				try {
+					if (field.isEnumConstant()) {
+						return SymbolKind.EnumMember;
+					}
+					int flags = field.getFlags();
+					if (Flags.isStatic(flags) && Flags.isFinal(flags)) {
+						return SymbolKind.Constant;
+					}
+				} catch (JavaModelException ignore) {
+				}
 			return SymbolKind.Field;
 		case IJavaElement.IMPORT_CONTAINER:
 		case IJavaElement.IMPORT_DECLARATION:
+			//should we return SymbolKind.Namespace?
+		case IJavaElement.JAVA_MODULE:
 			return SymbolKind.Module;
 		case IJavaElement.INITIALIZER:
 			return SymbolKind.Constructor;
 		case IJavaElement.LOCAL_VARIABLE:
-		case IJavaElement.TYPE_PARAMETER:
 			return SymbolKind.Variable;
+		case IJavaElement.TYPE_PARAMETER:
+			return SymbolKind.TypeParameter;
 		case IJavaElement.METHOD:
-			return SymbolKind.Method;
+			try {
+				// TODO handle `IInitializer`. What should be the `SymbolKind`?
+				if (element instanceof IMethod) {
+					if (((IMethod) element).isConstructor()) {
+						return SymbolKind.Constructor;
+					}
+				}
+				return SymbolKind.Method;
+			} catch (JavaModelException e) {
+				return SymbolKind.Method;
+			}
 		case IJavaElement.PACKAGE_DECLARATION:
 			return SymbolKind.Package;
-		case IJavaElement.TYPE:
-			try {
-				return (((IType)element).isInterface() ? SymbolKind.Interface : SymbolKind.Class);
-			} catch (JavaModelException e) {
-				return SymbolKind.Class;
-			}
 		}
 		return SymbolKind.String;
 	}

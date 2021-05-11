@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2013 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui.tests/ui/org/eclipse/jdt/ui/tests/quickfix/UnresolvedTypesQuickFixTest.java
  *
@@ -14,8 +16,10 @@
 package org.eclipse.jdt.ls.core.internal.correction;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.core.runtime.Path;
 import org.eclipse.jdt.core.IClasspathAttribute;
@@ -24,6 +28,7 @@ import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.ls.core.internal.JavaProjectHelper;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -453,7 +458,6 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testQualifiedType() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -471,7 +475,7 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public class Test {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create class 'Test' in package 'test2'", buf.toString());
 
 		buf = new StringBuilder();
 		buf.append("package test2;\n");
@@ -479,7 +483,7 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public interface Test {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Add all missing tags", buf.toString());
+		Expected e2 = new Expected("Create interface 'Test' in package 'test2'", buf.toString());
 
 		buf = new StringBuilder();
 		buf.append("package test2;\n");
@@ -487,9 +491,9 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public enum Test {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e3 = new Expected("Add all missing tags", buf.toString());
+		Expected e3 = new Expected("Create enum 'Test' in package 'test2'", buf.toString());
 
-		assertCodeActions(cu, e1, e2, e2, e3);
+		assertCodeActions(cu, e1, e2, e3);
 	}
 
 	@Test
@@ -571,7 +575,6 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testTypeInSuperType() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -586,13 +589,12 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public class XXX {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create class 'XXX'", buf.toString());
 
 		assertCodeActionExists(cu, e1);
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testTypeInSuperInterface() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -607,13 +609,12 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public interface XXX {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create interface 'XXX'", buf.toString());
 
 		assertCodeActionExists(cu, e1);
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testTypeInAnnotation() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -629,13 +630,12 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public @interface Xyz {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create annotation 'Xyz'", buf.toString());
 
 		assertCodeActionExists(cu, e1);
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testTypeInAnnotation_bug153881() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("a", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -651,7 +651,7 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public @interface Unimportant {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create annotation 'Unimportant' in package 'scratch'", buf.toString());
 
 		assertCodeActions(cu, e1);
 	}
@@ -850,7 +850,6 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 	}
 
 	@Test
-	@Ignore("Create type")
 	public void testParameterizedType1() throws Exception {
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();
@@ -869,7 +868,7 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public class XXY<T> {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Add all missing tags", buf.toString());
+		Expected e1 = new Expected("Create class 'XXY<T>'", buf.toString());
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -877,7 +876,7 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		buf.append("public interface XXY<T> {\n");
 		buf.append("\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Add Javadoc comment", buf.toString());
+		Expected e2 = new Expected("Create interface 'XXY<T>'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -1402,6 +1401,32 @@ public class UnresolvedTypesQuickFixTest extends AbstractQuickFixTest {
 		pack2.createCompilationUnit("Tests.java", buf2.toString(), false, null);
 
 		assertCodeActionNotExists(cu1, "Import 'Tests' (pt)");
+	}
+
+	@Test
+	public void testTypeInSealedTypeDeclaration() throws Exception {
+		Map<String, String> options16 = new HashMap<>();
+		JavaModelUtil.setComplianceOptions(options16, JavaCore.VERSION_16);
+		options16.put(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, JavaCore.ENABLED);
+		options16.put(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, JavaCore.IGNORE);
+		fJProject1.setOptions(options16);
+
+		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("public sealed interface E permits F {\n");
+		buf.append("}\n");
+		ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+
+		buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("\n");
+		buf.append("public final class F implements E {\n");
+		buf.append("\n");
+		buf.append("}\n");
+		Expected e1 = new Expected("Create class 'F'", buf.toString());
+
+		assertCodeActions(cu, e1);
 	}
 
 }

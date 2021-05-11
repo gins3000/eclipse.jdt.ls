@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.reorg.ReorgPolicyFactory
  *
@@ -92,6 +94,7 @@ import org.eclipse.jdt.core.refactoring.descriptors.JavaRefactoringDescriptor;
 import org.eclipse.jdt.internal.core.manipulation.StubUtility;
 import org.eclipse.jdt.internal.core.manipulation.util.Strings;
 import org.eclipse.jdt.internal.core.refactoring.descriptors.RefactoringSignatureDescriptorFactory;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.BodyDeclarationRewrite;
@@ -105,7 +108,6 @@ import org.eclipse.jdt.internal.corext.refactoring.util.RefactoringASTParser;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.Messages;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.RefactoringCoreMessages;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.changes.CopyCompilationUnitChange;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.changes.CopyPackageChange;
@@ -1491,8 +1493,13 @@ public final class ReorgPolicyFactory {
 				if (fChangeManager == null) {
 					fChangeManager= createChangeManager(new SubProgressMonitor(pm, 1), new RefactoringStatus());
 					// TODO: non-CU matches silently dropped
-					RefactoringStatus status= Checks.validateModifiesFiles(getAllModifiedFiles(), null);
-					if (status.hasFatalError()) {
+					RefactoringStatus status;
+					try {
+						status = Checks.validateModifiesFiles(getAllModifiedFiles(), null, pm);
+						if (status.hasFatalError()) {
+							fChangeManager = new TextChangeManager();
+						}
+					} catch (CoreException e) {
 						fChangeManager= new TextChangeManager();
 					}
 				}

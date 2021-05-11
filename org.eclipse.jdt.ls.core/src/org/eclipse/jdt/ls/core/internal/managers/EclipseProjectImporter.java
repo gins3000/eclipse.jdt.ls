@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -12,7 +14,9 @@ package org.eclipse.jdt.ls.core.internal.managers;
 
 import static org.eclipse.core.resources.IProjectDescription.DESCRIPTION_FILE_NAME;
 
+import java.io.File;
 import java.util.Collection;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
@@ -25,21 +29,26 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.ls.core.internal.AbstractProjectImporter;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.ProjectUtils;
 
 public class EclipseProjectImporter extends AbstractProjectImporter {
-
-	private Collection<java.nio.file.Path> directories;
 
 	@Override
 	public boolean applies(IProgressMonitor monitor) throws CoreException {
 		if (directories == null) {
 			BasicFileDetector eclipseDetector = new BasicFileDetector(rootFolder.toPath(), DESCRIPTION_FILE_NAME)
 					.addExclusions("**/bin");//default Eclipse build dir
+			for (IProject project : ProjectUtils.getAllProjects(false)) {
+				File projectFile = project.getLocation().toFile();
+				eclipseDetector.addExclusions(projectFile.getAbsolutePath());
+			}
 			directories = eclipseDetector.scan(monitor);
 		}
+		directories = directories.stream().filter(path -> (new File(path.toFile(), IJavaProject.CLASSPATH_FILE_NAME).exists())).collect(Collectors.toList());
 		return !directories.isEmpty();
 	}
 

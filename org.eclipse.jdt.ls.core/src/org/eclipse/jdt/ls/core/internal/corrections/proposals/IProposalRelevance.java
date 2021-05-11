@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2012, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/IProposalRelevance.java
  *
@@ -94,6 +96,7 @@ public interface IProposalRelevance {
 	public static final int RETURN_ALLOCATED_OBJECT_MATCH= 7;
 	public static final int CREATE_LOCAL= 7;
 
+	public static final int MOVE_REFACTORING = 6;
 	public static final int REMOVE_SEMICOLON= 6;
 	public static final int CREATE_METHOD_IN_SUPER= 6;
 	public static final int QUALIFY_LHS= 6;
@@ -202,6 +205,7 @@ public interface IProposalRelevance {
 	public static final int CREATE_CONSTANT= 4;
 
 	public static final int CHANGE_CLASS_TO_INTERFACE= 3;
+	public static final int GENERATE_GETTER_AND_SETTER = 3;
 	public static final int GENERATE_HASHCODE_AND_EQUALS= 3;
 	public static final int SIMILAR_TYPE= 3;
 	public static final int EXTRACT_LOCAL_ALL_ERROR= 3;

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -30,7 +32,9 @@ import java.util.Comparator;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.resources.WorkspaceJob;
 import org.eclipse.core.runtime.CoreException;
@@ -222,8 +226,28 @@ public class JDTUtilsTest extends AbstractWorkspaceTest {
 		IFile iFile = project.getFile("/src/org/eclipse/testIsFolder/Test.java");
 		URI uriFile = iFile.getLocationURI();
 		assertTrue(JDTUtils.isFolder(uriFolder.toString()));
+		assertEquals(JDTUtils.getFileOrFolder(uriFolder.toString()).getType(), IResource.FOLDER);
+		assertEquals(JDTUtils.getFileOrFolder(uriFile.toString()).getType(), IResource.FILE);
 		assertFalse(JDTUtils.isFolder(uriFile.toString()));
 		assertNotNull(JDTUtils.findFile(uriFile.toString()));
 		assertNotNull(JDTUtils.findFolder(uriFolder.toString()));
+	}
+
+	@Test
+	public void testGetFileOrFolder() throws Exception {
+		// For: https://github.com/eclipse/eclipse.jdt.ls/issues/1137
+		IProject project = WorkspaceHelper.getProject(ProjectsManager.DEFAULT_PROJECT_NAME);
+
+		File parentFolder = new File(project.getLocation().toString(), "/src/org/eclipse");
+		IResource parent = JDTUtils.getFileOrFolder(parentFolder.toURI().toString());
+		assertTrue(parent instanceof IFolder);
+		final int originalMemberNum = ((IFolder) parent).members().length;
+
+		File newPackage = new File(project.getLocation().toString(), "/src/org/eclipse/testGetFileOrFolder");
+		newPackage.mkdirs();
+
+		IResource resource = JDTUtils.getFileOrFolder(newPackage.toURI().toString());
+		assertTrue(resource instanceof IFolder);
+		assertEquals("The parent package should be aware of the newly created child package", ((IFolder) parent).members().length, originalMemberNum + 1);
 	}
 }

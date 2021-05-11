@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Till Brychcy and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/corext/dom/TypeAnnotationRewrite.java
  *
@@ -50,7 +52,7 @@ public class TypeAnnotationRewrite {
 	 */
 	public static void removePureTypeAnnotations(ASTNode node, ChildListPropertyDescriptor childListProperty, ASTRewrite rewrite, TextEditGroup editGroup) {
 		CompilationUnit root= (CompilationUnit) node.getRoot();
-		if (!JavaModelUtil.is18OrHigher(root.getJavaElement().getJavaProject())) {
+		if (!JavaModelUtil.is1d8OrHigher(root.getJavaElement().getJavaProject())) {
 			return;
 		}
 		ListRewrite listRewrite= rewrite.getListRewrite(node, childListProperty);

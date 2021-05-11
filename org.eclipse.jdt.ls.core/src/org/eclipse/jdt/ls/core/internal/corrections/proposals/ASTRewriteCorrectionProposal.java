@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2014 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/ui/text/java/correction/ASTRewriteCorrectionProposal.java
  *
@@ -43,8 +45,8 @@ public class ASTRewriteCorrectionProposal extends CUCorrectionProposal {
 	 *            <code>null</code> if {@link #getRewrite()} is overridden
 	 * @param relevance the relevance of this proposal
 	 */
-	public ASTRewriteCorrectionProposal(String name, ICompilationUnit cu, ASTRewrite rewrite, int relevance) {
-		super(name, cu, relevance);
+	public ASTRewriteCorrectionProposal(String name, String kind, ICompilationUnit cu, ASTRewrite rewrite, int relevance) {
+		super(name, kind, cu, null, relevance);
 		fRewrite= rewrite;
 	}
 

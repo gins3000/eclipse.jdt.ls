@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2012 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corrections.proposals.LinkedCorrectionProposal;
  *
@@ -48,12 +50,12 @@ public class LinkedCorrectionProposal extends ASTRewriteCorrectionProposal {
 	 *            The image that is displayed for this proposal or
 	 *            <code>null</code> if no image is desired.
 	 */
-	public LinkedCorrectionProposal(String name, ICompilationUnit cu, ASTRewrite rewrite, int relevance) {
-		super(name, cu, rewrite, relevance);
+	public LinkedCorrectionProposal(String name, String kind, ICompilationUnit cu, ASTRewrite rewrite, int relevance) {
+		super(name, kind, cu, rewrite, relevance);
 		fLinkedProposalModel = null;
 	}
 
-	protected LinkedProposalModelCore getLinkedProposalModel() {
+	public LinkedProposalModelCore getLinkedProposalModel() {
 		if (fLinkedProposalModel == null) {
 			fLinkedProposalModel = new LinkedProposalModelCore();
 		}

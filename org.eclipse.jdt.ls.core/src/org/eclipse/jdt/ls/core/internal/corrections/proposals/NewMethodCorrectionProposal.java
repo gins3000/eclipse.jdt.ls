@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/proposals/NewMethodCorrectionProposal.java
  *
@@ -69,7 +71,7 @@ public class NewMethodCorrectionProposal extends AbstractMethodCorrectionProposa
 			return 0;
 		}
 		boolean isTargetInterface= getSenderBinding().isInterface();
-		if (isTargetInterface && !JavaModelUtil.is18OrHigher(getCompilationUnit().getJavaProject())) {
+		if (isTargetInterface && !JavaModelUtil.is1d8OrHigher(getCompilationUnit().getJavaProject())) {
 			// only abstract methods are allowed for interface present in less than Java 1.8
 			return getInterfaceMethodModifiers(targetTypeDecl, true);
 		}

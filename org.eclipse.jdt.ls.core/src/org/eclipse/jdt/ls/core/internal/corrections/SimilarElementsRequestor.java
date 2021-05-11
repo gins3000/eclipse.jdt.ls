@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2018 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/SimilarElementsRequestor.java
  *
@@ -31,6 +33,7 @@ import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
+import org.eclipse.jdt.ls.core.internal.contentassist.TypeFilter;
 
 public class SimilarElementsRequestor extends CompletionRequestor {
 
@@ -231,9 +234,9 @@ public class SimilarElementsRequestor extends CompletionRequestor {
 			return;
 		}
 		String fullName= new String(Signature.toCharArray(Signature.getTypeErasure(typeNameSig)));
-		//		if (TypeFilter.isFiltered(fullName)) {  // requires jdt.ui preferences
-		//			return;
-		//		}
+		if (TypeFilter.isFiltered(fullName)) {
+			return;
+		}
 		if (NameMatcher.isSimilarName(fName, Signature.getSimpleName(fullName))) {
 			addResult(new SimilarElement(kind, fullName, relevance));
 		}

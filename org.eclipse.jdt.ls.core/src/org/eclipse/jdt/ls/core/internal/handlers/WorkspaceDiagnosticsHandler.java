@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -13,6 +15,7 @@ package org.eclipse.jdt.ls.core.internal.handlers;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,8 +34,10 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaModelMarker;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
@@ -40,6 +45,7 @@ import org.eclipse.jdt.ls.core.internal.JavaClientConnection;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
+import org.eclipse.jdt.ls.core.internal.preferences.ClientPreferences;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.lsp4j.Diagnostic;
@@ -62,10 +68,17 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 	public static final String PROJECT_CONFIGURATION_IS_NOT_UP_TO_DATE_WITH_POM_XML = "Project configuration is not up-to-date with pom.xml, requires an update.";
 	private final JavaClientConnection connection;
 	private final ProjectsManager projectsManager;
+	private final boolean isDiagnosticTagSupported;
 
+	@Deprecated
 	public WorkspaceDiagnosticsHandler(JavaClientConnection connection, ProjectsManager projectsManager) {
+		this(connection, projectsManager, null);
+	}
+
+	public WorkspaceDiagnosticsHandler(JavaClientConnection connection, ProjectsManager projectsManager, ClientPreferences prefs) {
 		this.connection = connection;
 		this.projectsManager = projectsManager;
+		this.isDiagnosticTagSupported = prefs != null ? prefs.isDiagnosticTagSupported() : false;
 	}
 
 	public void addResourceChangeListener() {
@@ -97,14 +110,30 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 	@Override
 	public boolean visit(IResourceDelta delta) throws CoreException {
 		IResource resource = delta.getResource();
-		// Check if resource is accessible.
-		// We do not deal with the markers for deleted files here
-		// WorkspaceEventsHandler removes the diagnostics for deleted resources.
-		if (resource == null || !resource.isAccessible()) {
+		if (resource == null) {
 			return false;
 		}
 		if (resource.getType() == IResource.FOLDER || resource.getType() == IResource.ROOT) {
 			return true;
+		}
+		// WorkspaceEventsHandler only handles the case of deleting the specific file and removes it's diagnostics.
+		// If delete a folder directly, no way to clean up the diagnostics for it's children.
+		// The resource delta visitor will make sure to clean up all stale diagnostics.
+		if (!resource.isAccessible()) { // Check if resource is accessible.
+			if (isSupportedDiagnosticsResource(resource)) {
+				cleanUpDiagnostics(resource);
+				return resource.getType() == IResource.PROJECT;
+			}
+
+			// If delete a project folder directly, make sure to clean up its build file diagnostics.
+			if (projectsManager.isBuildLikeFileName(resource.getName())) {
+				cleanUpDiagnostics(resource);
+				if(!resource.getParent().isAccessible()) { // Clean up the project folder diagnostics.
+					cleanUpDiagnostics(resource.getParent(), Platform.OS_WIN32.equals(Platform.getOS()));
+				}
+			}
+
+			return false;
 		}
 		if (resource.getType() == IResource.PROJECT) {
 			// ignore problems caused by standalone files (problems in the default project)
@@ -113,36 +142,8 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 			}
 			IProject project = (IProject) resource;
 			// report problems for other projects
-			IMarker[] markers = project.findMarkers(null, true, IResource.DEPTH_ONE);
-			Range range = new Range(new Position(0, 0), new Position(0, 0));
-
-			List<IMarker> projectMarkers = new ArrayList<>(markers.length);
-
-			String uri = JDTUtils.getFileURI(project);
-			IFile pom = project.getFile("pom.xml");
-			List<IMarker> pomMarkers = new ArrayList<>();
-			if (pom.exists()) {
-				pomMarkers.addAll(Arrays.asList(pom.findMarkers(null, true, 1)));
-			}
-
-			for (IMarker marker : markers) {
-				if (!marker.exists() || CheckMissingNaturesListener.MARKER_TYPE.equals(marker.getType())) {
-					continue;
-				}
-				if (IMavenConstants.MARKER_CONFIGURATION_ID.equals(marker.getType())) {
-					pomMarkers.add(marker);
-				} else {
-					projectMarkers.add(marker);
-				}
-			}
-
-			List<Diagnostic> diagnostics = toDiagnosticArray(range, projectMarkers);
-			String clientUri = ResourceUtils.toClientUri(uri);
-			connection.publishDiagnostics(new PublishDiagnosticsParams(clientUri, diagnostics));
-			if (pom.exists()) {
-				diagnostics = toDiagnosticArray(range, pomMarkers);
-				connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(clientUri + "/pom.xml"), diagnostics));
-			}
+			IMarker[] markers = project.findMarkers(null, true, IResource.DEPTH_ZERO);
+			publishMarkers(project, markers);
 			return true;
 		}
 		// No marker changes continue to visit
@@ -150,16 +151,23 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 			return false;
 		}
 		IFile file = (IFile) resource;
-		String uri = JDTUtils.getFileURI(resource);
 		IDocument document = null;
 		IMarker[] markers = null;
 		// Check if it is a Java ...
 		if (JavaCore.isJavaLikeFileName(file.getName())) {
+			ICompilationUnit cu = (ICompilationUnit) JavaCore.create(file);
+			// Clear the diagnostics for the resource not on the classpath
+			IJavaProject javaProject = cu.getJavaProject();
+			if (javaProject == null || !javaProject.isOnClasspath(cu)) {
+				String uri = JDTUtils.getFileURI(resource);
+				this.connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), Collections.emptyList()));
+				return false;
+			}
+
 			IMarker[] javaMarkers = resource.findMarkers(IJavaModelMarker.JAVA_MODEL_PROBLEM_MARKER, false, IResource.DEPTH_ONE);
 			IMarker[] taskMarkers = resource.findMarkers(IJavaModelMarker.TASK_MARKER, false, IResource.DEPTH_ONE);
 			markers = Arrays.copyOf(javaMarkers, javaMarkers.length + taskMarkers.length);
 			System.arraycopy(taskMarkers, 0, markers, javaMarkers.length, taskMarkers.length);
-			ICompilationUnit cu = (ICompilationUnit) JavaCore.create(file);
 			document = JsonRpcHelpers.toDocument(cu.getBuffer());
 		} // or a build file
 		else if (projectsManager.isBuildFile(file)) {
@@ -168,9 +176,41 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 			document = JsonRpcHelpers.toDocument(file);
 		}
 		if (document != null) {
-			this.connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), toDiagnosticsArray(document, markers)));
+			String uri = JDTUtils.getFileURI(resource);
+			this.connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), toDiagnosticsArray(document, markers, isDiagnosticTagSupported)));
 		}
 		return false;
+	}
+
+	private void publishMarkers(IProject project, IMarker[] markers) throws CoreException {
+		Range range = new Range(new Position(0, 0), new Position(0, 0));
+
+		List<IMarker> projectMarkers = new ArrayList<>(markers.length);
+
+		String uri = JDTUtils.getFileURI(project);
+		IFile pom = project.getFile("pom.xml");
+		List<IMarker> pomMarkers = new ArrayList<>();
+		for (IMarker marker : markers) {
+			if (!marker.exists() || CheckMissingNaturesListener.MARKER_TYPE.equals(marker.getType())) {
+				continue;
+			}
+			if (IMavenConstants.MARKER_CONFIGURATION_ID.equals(marker.getType())) {
+				pomMarkers.add(marker);
+			} else {
+				projectMarkers.add(marker);
+			}
+		}
+		List<Diagnostic> diagnostics = toDiagnosticArray(range, projectMarkers, isDiagnosticTagSupported);
+		String clientUri = ResourceUtils.toClientUri(uri);
+		connection.publishDiagnostics(new PublishDiagnosticsParams(clientUri, diagnostics));
+		if (pom.exists()) {
+			IDocument document = JsonRpcHelpers.toDocument(pom);
+			diagnostics = toDiagnosticsArray(document, pom.findMarkers(null, true, IResource.DEPTH_ZERO), isDiagnosticTagSupported);
+			List<Diagnostic> diagnosicts2 = toDiagnosticArray(range, pomMarkers, isDiagnosticTagSupported);
+			diagnostics.addAll(diagnosicts2);
+			String pomSuffix = clientUri.endsWith("/") ? "pom.xml" : "/pom.xml";
+			connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(clientUri + pomSuffix), diagnostics));
+		}
 	}
 
 	public List<IMarker> publishDiagnostics(IProgressMonitor monitor) throws CoreException {
@@ -186,8 +226,23 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 			if (monitor != null && monitor.isCanceled()) {
 				throw new OperationCanceledException();
 			}
-			markers.addAll(Arrays.asList(project.findMarkers(IJavaModelMarker.JAVA_MODEL_PROBLEM_MARKER, true, IResource.DEPTH_INFINITE)));
-			markers.addAll(Arrays.asList(project.findMarkers(IJavaModelMarker.TASK_MARKER, true, IResource.DEPTH_INFINITE)));
+			if (JavaLanguageServerPlugin.getProjectsManager().getDefaultProject().equals(project)) {
+				continue;
+			}
+			IMarker[] allMarkers = project.findMarkers(null, true, IResource.DEPTH_INFINITE);
+			for (IMarker marker : allMarkers) {
+				if (!marker.exists() || CheckMissingNaturesListener.MARKER_TYPE.equals(marker.getType())) {
+					continue;
+				}
+				if (IJavaModelMarker.JAVA_MODEL_PROBLEM_MARKER.equals(marker.getType()) || IJavaModelMarker.TASK_MARKER.equals(marker.getType())) {
+					markers.add(marker);
+					continue;
+				}
+				IResource resource = marker.getResource();
+				if (project.equals(resource) || projectsManager.isBuildFile(resource)) {
+					markers.add(marker);
+				}
+			}
 		}
 		return markers;
 	}
@@ -196,15 +251,13 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 		Map<IResource, List<IMarker>> map = markers.stream().collect(Collectors.groupingBy(IMarker::getResource));
 		for (Map.Entry<IResource, List<IMarker>> entry : map.entrySet()) {
 			IResource resource = entry.getKey();
-			// ignore problems caused by standalone files
-			if (JavaLanguageServerPlugin.getProjectsManager().getDefaultProject().equals(resource.getProject())) {
-				continue;
-			}
 			if (resource instanceof IProject) {
-				String uri = JDTUtils.getFileURI(resource);
-				Range range = new Range(new Position(0, 0), new Position(0, 0));
-				List<Diagnostic> diagnostics = WorkspaceDiagnosticsHandler.toDiagnosticArray(range, entry.getValue());
-				connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), diagnostics));
+				try {
+					IProject project = (IProject) resource;
+					publishMarkers(project, entry.getValue().toArray(new IMarker[0]));
+				} catch (CoreException e) {
+					JavaLanguageServerPlugin.logException(e.getMessage(), e);
+				}
 				continue;
 			}
 			IFile file = resource.getAdapter(IFile.class);
@@ -212,26 +265,31 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 				continue;
 			}
 			IDocument document = null;
-			String uri = JDTUtils.getFileURI(resource);
+			String uri = JDTUtils.getFileURI(file);
 			if (JavaCore.isJavaLikeFileName(file.getName())) {
 				ICompilationUnit cu = JDTUtils.resolveCompilationUnit(uri);
-				try {
-					document = JsonRpcHelpers.toDocument(cu.getBuffer());
-				} catch (JavaModelException e) {
-					JavaLanguageServerPlugin.logException("Failed to publish diagnostics.", e);
+				//ignoring working copies, they're handled in the DocumentLifecycleHandler
+				if (cu != null && !cu.isWorkingCopy()) {
+					try {
+						document = JsonRpcHelpers.toDocument(cu.getBuffer());
+					} catch (JavaModelException e) {
+						JavaLanguageServerPlugin.logException("Failed to publish diagnostics for " + uri, e);
+					}
 				}
 			} else if (projectsManager.isBuildFile(file)) {
 				document = JsonRpcHelpers.toDocument(file);
 			}
-
 			if (document != null) {
-				List<Diagnostic> diagnostics = WorkspaceDiagnosticsHandler.toDiagnosticsArray(document, entry.getValue().toArray(new IMarker[0]));
+				List<Diagnostic> diagnostics = WorkspaceDiagnosticsHandler.toDiagnosticsArray(document, entry.getValue().toArray(new IMarker[0]), isDiagnosticTagSupported);
 				connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), diagnostics));
 			}
 		}
 	}
 
-
+	@Deprecated
+	public static List<Diagnostic> toDiagnosticArray(Range range, Collection<IMarker> markers) {
+		return toDiagnosticArray(range, markers, false);
+	}
 
 	/**
 	 * Transforms {@link IMarker}s into a list of {@link Diagnostic}s
@@ -240,12 +298,12 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 	 * @param markers
 	 * @return a list of {@link Diagnostic}s
 	 */
-	public static List<Diagnostic> toDiagnosticArray(Range range, Collection<IMarker> markers) {
-		List<Diagnostic> diagnostics = markers.stream().map(m -> toDiagnostic(range, m)).filter(d -> d != null).collect(Collectors.toList());
+	public static List<Diagnostic> toDiagnosticArray(Range range, Collection<IMarker> markers, boolean isDiagnosticTagSupported) {
+		List<Diagnostic> diagnostics = markers.stream().map(m -> toDiagnostic(range, m, isDiagnosticTagSupported)).filter(d -> d != null).collect(Collectors.toList());
 		return diagnostics;
 	}
 
-	private static Diagnostic toDiagnostic(Range range, IMarker marker) {
+	private static Diagnostic toDiagnostic(Range range, IMarker marker, boolean isDiagnosticTagSupported) {
 		if (marker == null || !marker.exists()) {
 			return null;
 		}
@@ -257,9 +315,18 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 		}
 		d.setMessage(message);
 		d.setSeverity(convertSeverity(marker.getAttribute(IMarker.SEVERITY, -1)));
-		d.setCode(String.valueOf(marker.getAttribute(IJavaModelMarker.ID, 0)));
+		int problemId = marker.getAttribute(IJavaModelMarker.ID, 0);
+		d.setCode(String.valueOf(problemId));
+		if (isDiagnosticTagSupported) {
+			d.setTags(DiagnosticsHandler.getDiagnosticTag(problemId));
+		}
 		d.setRange(range);
 		return d;
+	}
+
+	@Deprecated
+	public static List<Diagnostic> toDiagnosticsArray(IDocument document, IMarker[] markers) {
+		return toDiagnosticsArray(document, markers, false);
 	}
 
 	/**
@@ -270,24 +337,28 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 	 * @param markers
 	 * @return a list of {@link Diagnostic}s
 	 */
-	public static List<Diagnostic> toDiagnosticsArray(IDocument document, IMarker[] markers) {
+	public static List<Diagnostic> toDiagnosticsArray(IDocument document, IMarker[] markers, boolean isDiagnosticTagSupported) {
 		List<Diagnostic> diagnostics = Stream.of(markers)
-				.map(m -> toDiagnostic(document, m))
+				.map(m -> toDiagnostic(document, m, isDiagnosticTagSupported))
 				.filter(d -> d != null)
 				.collect(Collectors.toList());
 		return diagnostics;
 	}
 
-	private static Diagnostic toDiagnostic(IDocument document, IMarker marker) {
+	private static Diagnostic toDiagnostic(IDocument document, IMarker marker, boolean isDiagnosticTagSupported) {
 		if (marker == null || !marker.exists()) {
 			return null;
 		}
 		Diagnostic d = new Diagnostic();
 		d.setSource(JavaLanguageServerPlugin.SERVER_SOURCE_ID);
 		d.setMessage(marker.getAttribute(IMarker.MESSAGE, ""));
-		d.setCode(String.valueOf(marker.getAttribute(IJavaModelMarker.ID, 0)));
+		int problemId = marker.getAttribute(IJavaModelMarker.ID, 0);
+		d.setCode(String.valueOf(problemId));
 		d.setSeverity(convertSeverity(marker.getAttribute(IMarker.SEVERITY, -1)));
 		d.setRange(convertRange(document, marker));
+		if (isDiagnosticTagSupported) {
+			d.setTags(DiagnosticsHandler.getDiagnosticTag(problemId));
+		}
 		return d;
 	}
 
@@ -297,6 +368,16 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 	 */
 	private static Range convertRange(IDocument document, IMarker marker) {
 		int line = marker.getAttribute(IMarker.LINE_NUMBER, -1) - 1;
+		if (line < 0) {
+			int end = marker.getAttribute(IMarker.CHAR_END, -1);
+			int start = marker.getAttribute(IMarker.CHAR_START, -1);
+			if (start >= 0 && end >= start) {
+				int[] startPos = JsonRpcHelpers.toLine(document, start);
+				int[] endPos = JsonRpcHelpers.toLine(document, end);
+				return new Range(new Position(startPos[0], startPos[1]), new Position(endPos[0], endPos[1]));
+			}
+			return new Range(new Position(0, 0), new Position(0, 0));
+		}
 		int cStart = 0;
 		int cEnd = 0;
 		try {
@@ -336,5 +417,28 @@ public final class WorkspaceDiagnosticsHandler implements IResourceChangeListene
 			return DiagnosticSeverity.Warning;
 		}
 		return DiagnosticSeverity.Information;
+	}
+
+	private void cleanUpDiagnostics(IResource resource) {
+		cleanUpDiagnostics(resource, false);
+	}
+
+	private void cleanUpDiagnostics(IResource resource, boolean addTrailingSlash) {
+		String uri = JDTUtils.getFileURI(resource);
+		if (uri != null) {
+			if (addTrailingSlash && !uri.endsWith("/")) {
+				uri = uri + "/";
+			}
+			this.connection.publishDiagnostics(new PublishDiagnosticsParams(ResourceUtils.toClientUri(uri), Collections.emptyList()));
+		}
+	}
+
+	private boolean isSupportedDiagnosticsResource(IResource resource) {
+		if (resource.getType() == IResource.PROJECT) {
+			return true;
+		}
+
+		IFile file = (IFile) resource;
+		return JavaCore.isJavaLikeFileName(file.getName()) || projectsManager.isBuildFile(file);
 	}
 }

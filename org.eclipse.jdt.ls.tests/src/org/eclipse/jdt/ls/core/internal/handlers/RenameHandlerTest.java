@@ -1,9 +1,11 @@
 /*******************************************************************************
 * Copyright (c) 2017 Microsoft Corporation and others.
 * All rights reserved. This program and the accompanying materials
-* are made available under the terms of the Eclipse Public License v1.0
+* are made available under the terms of the Eclipse Public License 2.0
 * which accompanies this distribution, and is available at
-* http://www.eclipse.org/legal/epl-v10.html
+* https://www.eclipse.org/legal/epl-2.0/
+*
+* SPDX-License-Identifier: EPL-2.0
 *
 * Contributors:
 *     Microsoft Corporation - initial API and implementation
@@ -13,40 +15,38 @@ package org.eclipse.jdt.ls.core.internal.handlers;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedList;
 import java.util.List;
 
-import org.eclipse.core.resources.IFile;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
-import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.TextEditUtil;
 import org.eclipse.jdt.ls.core.internal.managers.AbstractProjectsManagerBasedTest;
 import org.eclipse.jdt.ls.core.internal.preferences.ClientPreferences;
-import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.jdt.ls.core.internal.preferences.Preferences;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.lsp4j.CreateFile;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.RenameFile;
 import org.eclipse.lsp4j.RenameParams;
-import org.eclipse.lsp4j.ResourceChange;
+import org.eclipse.lsp4j.ResourceOperation;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -54,9 +54,6 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 
 	private RenameHandler handler;
 
-	@Mock
-	private PreferenceManager preferenceManager;
-	@Mock
 	private ClientPreferences clientPreferences;
 
 	private IPackageFragmentRoot sourceFolder;
@@ -65,9 +62,8 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 	public void setup() throws Exception {
 		IJavaProject javaProject = newEmptyProject();
 		sourceFolder = javaProject.getPackageFragmentRoot(javaProject.getProject().getFolder("src"));
-		JavaLanguageServerPlugin.setPreferencesManager(preferenceManager);
-		when(preferenceManager.getClientPreferences()).thenReturn(clientPreferences);
-		when(clientPreferences.isWorkspaceEditResourceChangesSupported()).thenReturn(false);
+		clientPreferences = preferenceManager.getClientPreferences();
+		when(clientPreferences.isResourceOperationSupported()).thenReturn(false);
 		Preferences p = mock(Preferences.class);
 		when(preferenceManager.getPreferences()).thenReturn(p);
 		when(p.isRenameEnabled()).thenReturn(true);
@@ -212,8 +208,8 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 	}
 
 	@Test
-	public void testRenameTypeWhithResourceChanges() throws JavaModelException, BadLocationException {
-		when(clientPreferences.isWorkspaceEditResourceChangesSupported()).thenReturn(true);
+	public void testRenameTypeWithResourceChanges() throws JavaModelException, BadLocationException {
+		when(clientPreferences.isResourceOperationSupported()).thenReturn(true);
 
 		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
 
@@ -230,22 +226,19 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 		Position pos = mergeCode(builder, codes);
 		ICompilationUnit cu = pack1.createCompilationUnit("E.java", builder.toString(), false, null);
 
-		IFile resource = (IFile) cu.getResource();
-
 		WorkspaceEdit edit = getRenameEdit(cu, pos, "Newname");
 		assertNotNull(edit);
-		List<Either<ResourceChange, TextDocumentEdit>> resourceChanges = edit.getResourceChanges();
+		List<Either<TextDocumentEdit, ResourceOperation>> resourceChanges = edit.getDocumentChanges();
 
-		assertEquals(resourceChanges.size(), 3);
+		assertEquals(resourceChanges.size(), 2);
 
-		Either<ResourceChange, TextDocumentEdit> change = resourceChanges.get(2);
-		ResourceChange resourceChange = change.getLeft();
-		assertEquals(JDTUtils.toURI(cu), resourceChange.getCurrent());
-		assertEquals(JDTUtils.toURI(cu).replace("E", "Newname"), resourceChange.getNewUri());
+		Either<TextDocumentEdit, ResourceOperation> change = resourceChanges.get(1);
+		RenameFile resourceChange = (RenameFile) change.getRight();
+		assertEquals(JDTUtils.toURI(cu), resourceChange.getOldUri());
+		assertEquals(JDTUtils.toURI(cu).replaceFirst("(?s)E(?!.*?E)", "Newname"), resourceChange.getNewUri());
 
 		List<TextEdit> testChanges = new LinkedList<>();
-		testChanges.addAll(resourceChanges.get(0).getRight().getEdits());
-		testChanges.addAll(resourceChanges.get(1).getRight().getEdits());
+		testChanges.addAll(resourceChanges.get(0).getLeft().getEdits());
 
 		String expected = "package test1;\n" +
 						  "public class Newname {\n" +
@@ -261,7 +254,42 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 		assertEquals(expected, TextEditUtil.apply(builder.toString(), testChanges));
 	}
 
-	@Test
+	@Test(expected = ResponseErrorException.class)
+	public void testRenameTypeWithErrors() throws JavaModelException, BadLocationException {
+		when(clientPreferences.isResourceOperationSupported()).thenReturn(true);
+
+		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
+
+		String[] codes = { "package test1;\n",
+				           "public class Newname {\n",
+				           "   }\n",
+				           "}\n" };
+		StringBuilder builder = new StringBuilder();
+		mergeCode(builder, codes);
+		ICompilationUnit cu = pack1.createCompilationUnit("Newname.java", builder.toString(), false, null);
+
+
+		String[] codes1 = { "package test1;\n",
+				           "public class E|* {\n",
+				           "   public E() {\n",
+				           "   }\n",
+				           "   public int bar() {\n", "   }\n",
+				           "   public int foo() {\n",
+				           "		this.bar();\n",
+				           "   }\n",
+				           "}\n" };
+		builder = new StringBuilder();
+		Position pos = mergeCode(builder, codes1);
+		cu = pack1.createCompilationUnit("E.java", builder.toString(), false, null);
+
+		WorkspaceEdit edit = getRenameEdit(cu, pos, "Newname");
+		assertNotNull(edit);
+		List<Either<TextDocumentEdit, ResourceOperation>> resourceChanges = edit.getDocumentChanges();
+
+		assertEquals(resourceChanges.size(), 3);
+	}
+
+	@Test(expected = ResponseErrorException.class)
 	public void testRenameSystemLibrary() throws JavaModelException {
 		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
 
@@ -278,9 +306,7 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 		Position pos = mergeCode(builder, codes);
 		ICompilationUnit cu = pack1.createCompilationUnit("E.java", builder.toString(), false, null);
 
-		WorkspaceEdit edit = getRenameEdit(cu, pos, "newname");
-		assertNotNull(edit);
-		assertEquals(edit.getChanges().size(), 0);
+		getRenameEdit(cu, pos, "newname");
 	}
 
 	@Test
@@ -725,7 +751,7 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 
 	@Test
 	public void testRenamePackage() throws JavaModelException, BadLocationException {
-		when(clientPreferences.isWorkspaceEditResourceChangesSupported()).thenReturn(true);
+		when(clientPreferences.isResourceOperationSupported()).thenReturn(true);
 
 		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
 		IPackageFragment pack2 = sourceFolder.createPackageFragment("parent.test2", false, null);
@@ -759,16 +785,15 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 		WorkspaceEdit edit = getRenameEdit(cuB, pos, "parent.newpackage");
 		assertNotNull(edit);
 
-		List<Either<ResourceChange, TextDocumentEdit>> resourceChanges = edit.getResourceChanges();
+		List<Either<TextDocumentEdit, ResourceOperation>> resourceChanges = edit.getDocumentChanges();
 
 		assertEquals(5, resourceChanges.size());
 
 		List<TextEdit> testChangesA = new LinkedList<>();
-		testChangesA.addAll(resourceChanges.get(0).getRight().getEdits());
+		testChangesA.addAll(resourceChanges.get(0).getLeft().getEdits());
 
 		List<TextEdit> testChangesB = new LinkedList<>();
-		testChangesB.addAll(resourceChanges.get(1).getRight().getEdits());
-		testChangesB.addAll(resourceChanges.get(2).getRight().getEdits());
+		testChangesB.addAll(resourceChanges.get(1).getLeft().getEdits());
 
 		String expectedA =
 				"package test1;\n" +
@@ -790,13 +815,12 @@ public class RenameHandlerTest extends AbstractProjectsManagerBasedTest {
 		assertEquals(expectedB, TextEditUtil.apply(builderB.toString(), testChangesB));
 
 		//moved package
-		ResourceChange resourceChange = resourceChanges.get(3).getLeft();
-		assertNull(resourceChange.getCurrent());
-		assertEquals(ResourceUtils.fixURI(pack2.getResource().getRawLocationURI()).replace("test2", "newpackage"), resourceChange.getNewUri());
+		CreateFile resourceChange = (CreateFile) resourceChanges.get(2).getRight();
+		assertEquals(ResourceUtils.fixURI(pack2.getResource().getRawLocationURI()).replaceFirst("test2[/]?", "newpackage/.temp"), resourceChange.getUri());
 
 		//moved class B
-		ResourceChange resourceChange2 = resourceChanges.get(4).getLeft();
-		assertEquals(ResourceUtils.fixURI(cuB.getResource().getRawLocationURI()), resourceChange2.getCurrent());
+		RenameFile resourceChange2 = (RenameFile) resourceChanges.get(3).getRight();
+		assertEquals(ResourceUtils.fixURI(cuB.getResource().getRawLocationURI()), resourceChange2.getOldUri());
 		assertEquals(ResourceUtils.fixURI(cuB.getResource().getRawLocationURI()).replace("test2", "newpackage"), resourceChange2.getNewUri());
 	}
 

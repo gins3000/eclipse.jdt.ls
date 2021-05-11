@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.ui.text.correction.proposals.FixCorrectionProposal
  *
@@ -17,10 +19,11 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.refactoring.CompilationUnitChange;
+import org.eclipse.jdt.internal.corext.fix.ICleanUpCore;
 import org.eclipse.jdt.internal.corext.fix.IProposableFix;
-import org.eclipse.jdt.ls.core.internal.corext.fix.ICleanUp;
 import org.eclipse.jdt.ls.core.internal.corrections.CorrectionMessages;
 import org.eclipse.jdt.ls.core.internal.corrections.IInvocationContext;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.ltk.core.refactoring.TextFileChange;
 
@@ -32,11 +35,15 @@ import org.eclipse.ltk.core.refactoring.TextFileChange;
 public class FixCorrectionProposal extends LinkedCorrectionProposal {
 
 	private final IProposableFix fFix;
-	private final ICleanUp fCleanUp;
+	private final ICleanUpCore fCleanUp;
 	private CompilationUnit fCompilationUnit;
 
-	public FixCorrectionProposal(IProposableFix fix, ICleanUp cleanUp, int relevance, IInvocationContext context) {
-		super(fix.getDisplayString(), context.getCompilationUnit(), null, relevance);
+	public FixCorrectionProposal(IProposableFix fix, ICleanUpCore cleanUp, int relevance, IInvocationContext context) {
+		this(fix, cleanUp, relevance, context, CodeActionKind.QuickFix);
+	}
+
+	public FixCorrectionProposal(IProposableFix fix, ICleanUpCore cleanUp, int relevance, IInvocationContext context, String codeActionKind) {
+		super(fix.getDisplayString(), codeActionKind, context.getCompilationUnit(), null, relevance);
 		fFix = fix;
 		fCleanUp = cleanUp;
 		fCompilationUnit = context.getASTRoot();
@@ -46,12 +53,12 @@ public class FixCorrectionProposal extends LinkedCorrectionProposal {
 		return fFix.getStatus();
 	}
 
-	public ICleanUp getCleanUp() {
+	public ICleanUpCore getCleanUp() {
 		return fCleanUp;
 	}
 
 	@Override
-	public String getAdditionalProposalInfo(IProgressMonitor monitor) throws CoreException {
+	public String getAdditionalProposalInfo(IProgressMonitor monitor) {
 		StringBuffer result = new StringBuffer();
 
 		IStatus status = getFixStatus();

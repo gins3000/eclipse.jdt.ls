@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -15,7 +17,9 @@ import static java.nio.file.FileVisitResult.SKIP_SUBTREE;
 import static java.nio.file.FileVisitResult.TERMINATE;
 
 import java.io.IOException;
+import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileSystems;
+import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
 import java.nio.file.Files;
@@ -27,7 +31,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -47,23 +52,28 @@ import org.eclipse.jdt.ls.core.internal.StatusFactory;
 public class BasicFileDetector {
 
 	private static final String METADATA_FOLDER = "**/.metadata";
+	private static final Set<FileVisitOption> FOLLOW_LINKS_OPTION = EnumSet.of(FileVisitOption.FOLLOW_LINKS);
 	private List<Path> directories;
 	private Path rootDir;
-	private String fileName;
+	private List<String> fileNames;
 	private int maxDepth = 5;
 	private boolean includeNested = true;
-	private Set<String> exclusions = new HashSet<>(1);
+	private Set<String> exclusions = new LinkedHashSet<>(1);
 
 	/**
-	 * Constructs a new BasicFileDetector for the given root directory, searching for a fileName.
-	 * By default, the search depth is limited to 5. Sub-directories of a found directory will be walked through.
-	 * The ".metadata" folder is excluded.
-	 * @param rootDir the root directory to search for files
-	 * @param fileName the name of the file to search
+	 * Constructs a new BasicFileDetector for the given root directory, searching
+	 * for fileNames. By default, the search depth is limited to 5. Sub-directories
+	 * of a found directory will be walked through. The ".metadata" folder is
+	 * excluded.
+	 *
+	 * @param rootDir
+	 *            the root directory to search for files
+	 * @param fileNames
+	 *            the names of the file to search
 	 */
-	public BasicFileDetector(Path rootDir, String fileName) {
+	public BasicFileDetector(Path rootDir, String... fileNames) {
 		this.rootDir = rootDir;
-		this.fileName = fileName;
+		this.fileNames = fileNames == null ? new ArrayList<>() : Arrays.asList(fileNames);
 		directories = new ArrayList<>();
 		addExclusions(METADATA_FOLDER);
 		List<String> javaImportExclusions = JavaLanguageServerPlugin.getPreferencesManager().getPreferences().getJavaImportExclusions();
@@ -133,7 +143,7 @@ public class BasicFileDetector {
 	}
 
 	private void scanDir(Path dir, final IProgressMonitor monitor) throws IOException {
-		FileVisitor<Path> visitor = new SimpleFileVisitor<Path>() {
+		FileVisitor<Path> visitor = new SimpleFileVisitor<>() {
 			@Override
 			public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
 				if (monitor.isCanceled()) {
@@ -150,25 +160,46 @@ public class BasicFileDetector {
 				return CONTINUE;
 			}
 
+			@Override
+			public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+				Objects.requireNonNull(file);
+    			if (exc instanceof FileSystemLoopException) {
+        			return CONTINUE;
+    			} else {
+        			throw exc;
+    			}
+			}
+
 		};
-		Files.walkFileTree(dir, Collections.emptySet(), maxDepth, visitor);
+		Files.walkFileTree(dir, FOLLOW_LINKS_OPTION, maxDepth, visitor);
 	}
 
 	private boolean isExcluded(Path dir) {
 		if (dir.getFileName() == null) {
 			return true;
 		}
+		boolean excluded = false;
 		for (String pattern : exclusions) {
+			boolean includePattern = false;
+			if (pattern.startsWith("!")) {
+				includePattern = true;
+				pattern = pattern.substring(1);
+			}
 			PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + pattern);
 			if (matcher.matches(dir)) {
+				excluded = includePattern ? false : true;
+			}
+		}
+		return excluded;
+	}
+
+	private boolean hasTargetFile(Path dir) {
+		for (String fileName : fileNames) {
+			if (Files.isRegularFile(dir.resolve(fileName))) {
 				return true;
 			}
 		}
 		return false;
-	}
-
-	private boolean hasTargetFile(Path dir) {
-		return Files.isRegularFile(dir.resolve(fileName));
 	}
 
 }

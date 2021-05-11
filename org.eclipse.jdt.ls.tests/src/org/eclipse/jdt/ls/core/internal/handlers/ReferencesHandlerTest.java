@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -20,11 +22,16 @@ import java.net.URI;
 import java.util.List;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.jdt.core.IClassFile;
+import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
 import org.eclipse.jdt.ls.core.internal.managers.AbstractProjectsManagerBasedTest;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
-import org.eclipse.jdt.ls.core.internal.preferences.Preferences;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ReferenceContext;
@@ -47,7 +54,7 @@ public class ReferencesHandlerTest extends AbstractProjectsManagerBasedTest{
 		importProjects("eclipse/hello");
 		project = WorkspaceHelper.getProject("hello");
 		preferenceManager = mock(PreferenceManager.class);
-		when(preferenceManager.getPreferences()).thenReturn(new Preferences());
+		when(preferenceManager.getPreferences()).thenReturn(preferences);
 		handler = new ReferencesHandler(preferenceManager);
 	}
 
@@ -77,6 +84,59 @@ public class ReferencesHandlerTest extends AbstractProjectsManagerBasedTest{
 		Location l = references.get(0);
 		String refereeUri = ResourceUtils.fixURI(project.getFile("src/java/Foo3.java").getRawLocationURI());
 		assertEquals(refereeUri, l.getUri());
+	}
+
+	@Test
+	public void testIncludeAccessors() {
+		boolean includeAccessors = preferenceManager.getPreferences().isIncludeAccessors();
+		try {
+			URI uri = project.getFile("src/org/ref/Apple.java").getRawLocationURI();
+			String fileURI = ResourceUtils.fixURI(uri);
+			ReferenceParams param = new ReferenceParams();
+			param.setPosition(new Position(3, 18));
+			param.setContext(new ReferenceContext(true));
+			param.setTextDocument(new TextDocumentIdentifier(fileURI));
+			preferenceManager.getPreferences().setIncludeAccessors(false);
+			List<Location> references = handler.findReferences(param, monitor);
+			assertNotNull("findReferences should not return null", references);
+			assertEquals(3, references.size());
+			preferenceManager.getPreferences().setIncludeAccessors(true);
+			references = handler.findReferences(param, monitor);
+			assertNotNull("findReferences should not return null", references);
+			assertEquals(5, references.size());
+			Location l = references.get(0);
+			String refereeUri = ResourceUtils.fixURI(project.getFile("src/org/ref/Apple.java").getRawLocationURI());
+			assertEquals(refereeUri, l.getUri());
+			l = references.get(4);
+			refereeUri = ResourceUtils.fixURI(project.getFile("src/org/ref/Test.java").getRawLocationURI());
+			assertEquals(refereeUri, l.getUri());
+		} finally {
+			preferenceManager.getPreferences().setIncludeAccessors(includeAccessors);
+		}
+	}
+
+	@Test
+	public void testEnumInClassFile() throws Exception {
+		when(preferenceManager.isClientSupportsClassFileContent()).thenReturn(true);
+		importProjects("eclipse/reference");
+		IProject referenceProject = WorkspaceHelper.getProject("reference");
+		IJavaProject javaProject = JavaCore.create(referenceProject);
+		IType element = javaProject.findType("org.sample.Foo");
+		IClassFile cf = (IClassFile) element.getAncestor(IJavaElement.CLASS_FILE);
+		URI uri = JDTUtils.toURI(JDTUtils.toUri(cf));
+		String fileURI = ResourceUtils.fixURI(uri);
+		ReferenceParams param = new ReferenceParams();
+		param.setPosition(new Position(7, 6));
+		param.setContext(new ReferenceContext(true));
+		param.setTextDocument(new TextDocumentIdentifier(fileURI));
+		List<Location> references = handler.findReferences(param, monitor);
+		assertNotNull("findReferences should not return null", references);
+		assertEquals(2, references.size());
+		Location l = references.get(0);
+		String refereeUri = ResourceUtils.fixURI(referenceProject.getFile("src/org/reference/Main.java").getRawLocationURI());
+		assertEquals(refereeUri, l.getUri());
+		l = references.get(1);
+		assertEquals(fileURI, l.getUri());
 	}
 
 }

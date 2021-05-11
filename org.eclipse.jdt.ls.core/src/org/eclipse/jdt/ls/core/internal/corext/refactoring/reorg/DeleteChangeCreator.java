@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2011 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.reorg.DeleteChangeCreator
  *
@@ -131,7 +133,7 @@ class DeleteChangeCreator {
 	private static TextChange addTextEditFromRewrite(TextChangeManager manager, ICompilationUnit cu, ASTRewrite rewrite) throws CoreException {
 		try {
 			ITextFileBuffer buffer= RefactoringFileBuffers.acquire(cu);
-			TextEdit resultingEdits= rewrite.rewriteAST(buffer.getDocument(), cu.getJavaProject().getOptions(true));
+			TextEdit resultingEdits= rewrite.rewriteAST(buffer.getDocument(), cu.getOptions(true));
 			TextChange textChange= manager.get(cu);
 			if (textChange instanceof TextFileChange) {
 				TextFileChange tfc= (TextFileChange) textChange;

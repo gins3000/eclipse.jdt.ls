@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Based on org.eclipse.jdt.internal.ui.text.javadoc.JavaDocAutoIndentStrategy
  *
@@ -28,9 +30,17 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.RecordDeclaration;
+import org.eclipse.jdt.core.dom.VariableDeclaration;
 import org.eclipse.jdt.core.manipulation.CodeGeneration;
+import org.eclipse.jdt.core.manipulation.SharedASTProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.StubUtility;
+import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.internal.corext.util.MethodOverrideTester;
 import org.eclipse.jdt.internal.corext.util.SuperTypeHierarchyCache;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
@@ -47,6 +57,7 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.InsertTextFormat;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public class JavadocCompletionProposal {
 
@@ -100,7 +111,7 @@ public class JavadocCompletionProposal {
 			Range range = JDTUtils.toRange(unit, offset, 0);
 			boolean isSnippetSupported = JavaLanguageServerPlugin.getPreferencesManager().getClientPreferences().isCompletionSnippetsSupported();
 			String replacement = prepareTemplate(buf.toString(), lineDelimiter, isSnippetSupported);
-			ci.setTextEdit(new TextEdit(range, replacement));
+			ci.setTextEdit(Either.forLeft(new TextEdit(range, replacement)));
 			ci.setFilterText(JAVA_DOC_COMMENT);
 			ci.setLabel(JAVA_DOC_COMMENT);
 			ci.setSortText(SortTextHelper.convertRelevance(0));
@@ -211,9 +222,42 @@ public class JavadocCompletionProposal {
 		if (!accept(offset, type)) {
 			return null;
 		}
-		String[] typeParamNames = StubUtility.getTypeParameterNames(type.getTypeParameters());
+		CompilationUnit unit = SharedASTProviderCore.getAST(type.getTypeRoot(), SharedASTProviderCore.WAIT_ACTIVE_ONLY, null);
+		if (unit == null) {
+			return null;
+		}
+		String version = type.getJavaProject().getOption(JavaCore.COMPILER_COMPLIANCE, true);
+		String[] typeParamNames = null;
+		boolean isRecord = false;
+		if (!JavaModelUtil.isVersionLessThan(version, JavaCore.VERSION_14)) {
+			ISourceRange range = type.getNameRange();
+			ASTNode node = NodeFinder.perform(unit, range.getOffset(), range.getLength()).getParent();
+			if (node instanceof RecordDeclaration) {
+				List components = ((RecordDeclaration) node).recordComponents();
+				List<String> paramList = new ArrayList<>(components.size());
+				for (Object o : components) {
+					if (o instanceof VariableDeclaration) {
+						paramList.add(((VariableDeclaration) o).getName().getFullyQualifiedName());
+					}
+				}
+				typeParamNames = paramList.toArray(new String[0]);
+				isRecord = true;
+			}
+		}
+		if (typeParamNames == null) {
+			typeParamNames = StubUtility.getTypeParameterNames(type.getTypeParameters());
+		}
 		String comment = CodeGeneration.getTypeComment(type.getCompilationUnit(), type.getTypeQualifiedName('.'), typeParamNames, lineDelimiter);
 		if (comment != null) {
+			if (isRecord) {
+				String[] lines = comment.split(System.getProperty("line.separator"));
+				for (int i = 0; i < lines.length; i++) {
+					if (lines[i].contains("param <")) {
+						lines[i] = lines[i].replace("<", "").replace(">", "");
+					}
+				}
+				comment = String.join(System.getProperty("line.separator"), lines);
+			}
 			return prepareTemplateComment(comment.trim(), indentation, type.getJavaProject(), lineDelimiter);
 		}
 		return null;

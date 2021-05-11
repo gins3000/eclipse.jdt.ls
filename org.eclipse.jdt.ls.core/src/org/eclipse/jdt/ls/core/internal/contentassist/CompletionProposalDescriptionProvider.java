@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2005, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -20,6 +22,7 @@ import org.eclipse.jdt.core.CompletionContext;
 import org.eclipse.jdt.core.CompletionProposal;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.Signature;
+import org.eclipse.jdt.internal.codeassist.CompletionEngine;
 import org.eclipse.jdt.internal.corext.template.java.SignatureUtil;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.handlers.CompletionResolveHandler;
@@ -135,7 +138,14 @@ public class CompletionProposalDescriptionProvider {
 		// TODO remove once https://bugs.eclipse.org/bugs/show_bug.cgi?id=85293
 		// gets fixed.
 		char[] signature= SignatureUtil.fix83600(methodProposal.getSignature());
-		char[][] parameterNames= methodProposal.findParameterNames(null);
+		char[][] parameterNames;
+		try {
+			parameterNames = methodProposal.findParameterNames(null);
+		} catch (Exception e) {
+			JavaLanguageServerPlugin.logException(e.getMessage(), e);
+			parameterNames = CompletionEngine.createDefaultParameterNames(Signature.getParameterCount(signature));
+			methodProposal.setParameterNames(parameterNames);
+		}
 		char[][] parameterTypes= Signature.getParameterTypes(signature);
 
 		for (int i= 0; i < parameterTypes.length; i++) {
@@ -310,7 +320,13 @@ public class CompletionProposalDescriptionProvider {
 
 		declaringType= Signature.getSimpleName(declaringType);
 		typeInfo.append(declaringType);
-		item.setDetail(typeInfo.toString());
+		StringBuilder detail = new StringBuilder();
+		if (typeInfo.length() > 0) {
+			detail.append(typeInfo);
+			detail.append('.');
+		}
+		detail.append(description);
+		item.setDetail(detail.toString());
 
 		setSignature(item, String.valueOf(methodProposal.getSignature()));
 		setDeclarationSignature(item, String.valueOf(methodProposal.getDeclarationSignature()));
@@ -440,6 +456,7 @@ public class CompletionProposalDescriptionProvider {
 		item.setFilterText(name);
 		item.setInsertText(name);
 		item.setLabel(nameBuffer.toString());
+		item.setDetail(new String(fullName));
 	}
 
 	private void createJavadocTypeProposalLabel(char[] fullName, CompletionItem item) {
@@ -515,29 +532,37 @@ public class CompletionProposalDescriptionProvider {
 		item.setLabel(buf.toString());
 
 		char[] declaration= proposal.getDeclarationSignature();
+		StringBuilder detailBuf = new StringBuilder();
 		if (declaration != null) {
 			setDeclarationSignature(item, String.valueOf(declaration));
-			StringBuilder declBuf = new StringBuilder();
 			declaration= Signature.getSignatureSimpleName(declaration);
 			if (declaration.length > 0) {
 				if (proposal.getRequiredProposals() != null) {
 					String declaringType= extractDeclaringTypeFQN(proposal);
 					String qualifier= Signature.getQualifier(declaringType);
 					if (qualifier.length() > 0) {
-						declBuf.append(qualifier);
-						declBuf.append('.');
+						detailBuf.append(qualifier);
+						detailBuf.append('.');
 					}
 				}
-				declBuf.append(declaration);
-				item.setDetail(declBuf.toString());
+				detailBuf.append(declaration);
 			}
 		}
+		if (detailBuf.length() > 0) {
+			detailBuf.append('.');
+		}
+		detailBuf.append(buf);
+		item.setDetail(detailBuf.toString());
 		setName(item,String.valueOf(name));
 	}
 
 	private void createPackageProposalLabel(CompletionProposal proposal, CompletionItem item) {
 		Assert.isTrue(proposal.getKind() == CompletionProposal.PACKAGE_REF || proposal.getKind() == CompletionProposal.MODULE_REF || proposal.getKind() == CompletionProposal.MODULE_DECLARATION);
 		item.setLabel(String.valueOf(proposal.getDeclarationSignature()));
+		StringBuilder detail = new StringBuilder();
+		detail.append(proposal.getKind() == CompletionProposal.PACKAGE_REF ? "(package) " : "(module) ");
+		detail.append(String.valueOf(proposal.getDeclarationSignature()));
+		item.setDetail(detail.toString());
 	}
 
 	StringBuilder createSimpleLabel(CompletionProposal proposal) {
@@ -563,7 +588,7 @@ public class CompletionProposalDescriptionProvider {
 		if (proposal.getRequiredProposals() != null) {
 			char[] signatureQualifier= Signature.getSignatureQualifier(declaringTypeSignature);
 			if (signatureQualifier.length > 0) {
-				item.setDetail(String.valueOf(signatureQualifier));
+				item.setDetail(String.valueOf(signatureQualifier) + "." + name);
 			}
 		}
 		setDeclarationSignature(item, String.valueOf(declaringTypeSignature));

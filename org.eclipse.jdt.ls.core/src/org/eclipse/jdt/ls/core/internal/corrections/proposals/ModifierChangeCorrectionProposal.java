@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from org.eclipse.jdt.internal.ui.text.correction.proposals.ModifierChangeCorrectionProposal
  *
@@ -40,6 +42,7 @@ import org.eclipse.jdt.internal.corext.fix.LinkedProposalPositionGroupCore;
 import org.eclipse.jdt.internal.corext.fix.LinkedProposalPositionGroupCore.PositionInformation;
 import org.eclipse.jdt.ls.core.internal.corext.dom.ModifierRewrite;
 import org.eclipse.jdt.ls.core.internal.corext.dom.VariableDeclarationRewrite;
+import org.eclipse.lsp4j.CodeActionKind;
 
 public class ModifierChangeCorrectionProposal extends LinkedCorrectionProposal {
 
@@ -49,7 +52,7 @@ public class ModifierChangeCorrectionProposal extends LinkedCorrectionProposal {
 	private int fExcludedModifiers;
 
 	public ModifierChangeCorrectionProposal(String label, ICompilationUnit targetCU, IBinding binding, ASTNode node, int includedModifiers, int excludedModifiers, int relevance) {
-		super(label, targetCU, null, relevance);
+		super(label, CodeActionKind.QuickFix, targetCU, null, relevance);
 		fBinding = binding;
 		fNode = node;
 		fIncludedModifiers = includedModifiers;
@@ -110,7 +113,7 @@ public class ModifierChangeCorrectionProposal extends LinkedCorrectionProposal {
 							if (expression != null) {
 								ReturnStatement returnStatement = ast.newReturnStatement();
 								returnStatement.setExpression(expression);
-								bodyStatement = ASTNodes.asFormattedString(returnStatement, 0, delimiter, unit.getJavaProject().getOptions(true));
+								bodyStatement = ASTNodes.asFormattedString(returnStatement, 0, delimiter, unit.getOptions(true));
 							}
 						}
 						String placeHolder = CodeGeneration.getMethodBodyContent(unit, methodBinding.getDeclaringClass().getName(), methodBinding.getName(), false, bodyStatement, delimiter);

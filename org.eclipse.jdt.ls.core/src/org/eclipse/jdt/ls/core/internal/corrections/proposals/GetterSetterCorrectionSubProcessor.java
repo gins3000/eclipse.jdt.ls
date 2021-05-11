@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2007, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -51,6 +53,8 @@ import org.eclipse.jdt.ls.core.internal.corext.refactoring.RefactoringAvailabili
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.sef.SelfEncapsulateFieldRefactoring;
 import org.eclipse.jdt.ls.core.internal.corrections.CorrectionMessages;
 import org.eclipse.jdt.ls.core.internal.corrections.IInvocationContext;
+import org.eclipse.jdt.ls.core.internal.preferences.Preferences;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.ltk.core.refactoring.Change;
 
 public class GetterSetterCorrectionSubProcessor {
@@ -73,17 +77,19 @@ public class GetterSetterCorrectionSubProcessor {
 		}
 	}
 
-	public static class SelfEncapsulateFieldProposal extends CUCorrectionProposal { // public for tests
+	public static class SelfEncapsulateFieldProposal extends ChangeCorrectionProposal { // public for tests
 
 		public SelfEncapsulateFieldProposal(int relevance, IField field) {
-			super(getDescription(field), field.getCompilationUnit(), getRefactoringChange(field), relevance);
+			super(getDescription(field), CodeActionKind.Refactor, getRefactoringChange(field), relevance);
 		}
 
 		public static Change getRefactoringChange(IField field) {
 			SelfEncapsulateFieldRefactoring refactoring;
 			try {
+				Preferences preferences = JavaLanguageServerPlugin.getPreferencesManager().getPreferences();
 				refactoring = new SelfEncapsulateFieldRefactoring(field);
 
+				refactoring.setGenerateJavadoc(preferences.isCodeGenerationTemplateGenerateComments());
 				refactoring.setVisibility(Flags.AccPublic);
 				refactoring.setConsiderVisibility(false);//private field references are just searched in local file
 				refactoring.checkInitialConditions(new NullProgressMonitor());
@@ -122,7 +128,7 @@ public class GetterSetterCorrectionSubProcessor {
 	 *            the resulting proposals
 	 * @return <code>true</code> if the quick assist is applicable at this offset
 	 */
-	public static boolean addGetterSetterProposal(IInvocationContext context, ASTNode coveringNode, IProblemLocationCore[] locations, ArrayList<CUCorrectionProposal> resultingCollections) {
+	public static boolean addGetterSetterProposal(IInvocationContext context, ASTNode coveringNode, IProblemLocationCore[] locations, ArrayList<ChangeCorrectionProposal> resultingCollections) {
 		if (locations != null) {
 			for (int i = 0; i < locations.length; i++) {
 				int problemId = locations[i].getProblemId();
@@ -137,11 +143,11 @@ public class GetterSetterCorrectionSubProcessor {
 		return addGetterSetterProposal(context, coveringNode, resultingCollections, IProposalRelevance.GETTER_SETTER_QUICK_ASSIST);
 	}
 
-	public static void addGetterSetterProposal(IInvocationContext context, IProblemLocationCore location, Collection<CUCorrectionProposal> proposals, int relevance) {
+	public static void addGetterSetterProposal(IInvocationContext context, IProblemLocationCore location, Collection<ChangeCorrectionProposal> proposals, int relevance) {
 		addGetterSetterProposal(context, location.getCoveringNode(context.getASTRoot()), proposals, relevance);
 	}
 
-	private static boolean addGetterSetterProposal(IInvocationContext context, ASTNode coveringNode, Collection<CUCorrectionProposal> proposals, int relevance) {
+	private static boolean addGetterSetterProposal(IInvocationContext context, ASTNode coveringNode, Collection<ChangeCorrectionProposal> proposals, int relevance) {
 		if (!(coveringNode instanceof SimpleName)) {
 			return false;
 		}
@@ -160,14 +166,14 @@ public class GetterSetterCorrectionSubProcessor {
 			return true;
 		}
 
-		CUCorrectionProposal proposal = getProposal(context.getCompilationUnit(), sn, variableBinding, relevance);
+		ChangeCorrectionProposal proposal = getProposal(context.getCompilationUnit(), sn, variableBinding, relevance);
 		if (proposal != null) {
 			proposals.add(proposal);
 		}
 		return true;
 	}
 
-	private static CUCorrectionProposal getProposal(ICompilationUnit cu, SimpleName sn, IVariableBinding variableBinding, int relevance) {
+	private static ChangeCorrectionProposal getProposal(ICompilationUnit cu, SimpleName sn, IVariableBinding variableBinding, int relevance) {
 		Expression accessNode = sn;
 		Expression qualifier = null;
 		boolean useSuper = false;
@@ -202,14 +208,14 @@ public class GetterSetterCorrectionSubProcessor {
 	 *            relevance of this proposal
 	 * @return the proposal if available or null
 	 */
-	private static CUCorrectionProposal addGetterProposal(ProposalParameter context, int relevance) {
+	private static ChangeCorrectionProposal addGetterProposal(ProposalParameter context, int relevance) {
 		IMethodBinding method = findGetter(context);
 		if (method != null) {
 			Expression mi = createMethodInvocation(context, method, null);
 			context.astRewrite.replace(context.accessNode, mi, null);
 
 			String label = Messages.format(CorrectionMessages.GetterSetterCorrectionSubProcessor_replacewithgetter_description, BasicElementLabels.getJavaCodeString(ASTNodes.asString(context.accessNode)));
-			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, context.compilationUnit, context.astRewrite, relevance);
+			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, context.compilationUnit, context.astRewrite, relevance);
 			return proposal;
 		} else {
 			IJavaElement element = context.variableBinding.getJavaElement();
@@ -276,7 +282,7 @@ public class GetterSetterCorrectionSubProcessor {
 	 *            relevance of this proposal
 	 * @return the proposal if available or null
 	 */
-	private static CUCorrectionProposal addSetterProposal(ProposalParameter context, int relevance) {
+	private static ChangeCorrectionProposal addSetterProposal(ProposalParameter context, int relevance) {
 		boolean isBoolean = isBoolean(context);
 		String setterName = GetterSetterUtil.getSetterName(context.variableBinding, context.compilationUnit.getJavaProject(), null, isBoolean);
 		ITypeBinding declaringType = context.variableBinding.getDeclaringClass();
@@ -294,7 +300,7 @@ public class GetterSetterCorrectionSubProcessor {
 			context.astRewrite.replace(context.accessNode.getParent(), mi, null);
 
 			String label = Messages.format(CorrectionMessages.GetterSetterCorrectionSubProcessor_replacewithsetter_description, BasicElementLabels.getJavaCodeString(ASTNodes.asString(context.accessNode)));
-			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, context.compilationUnit, context.astRewrite, relevance);
+			ASTRewriteCorrectionProposal proposal = new ASTRewriteCorrectionProposal(label, CodeActionKind.QuickFix, context.compilationUnit, context.astRewrite, relevance);
 			return proposal;
 		} else {
 			IJavaElement element = context.variableBinding.getJavaElement();

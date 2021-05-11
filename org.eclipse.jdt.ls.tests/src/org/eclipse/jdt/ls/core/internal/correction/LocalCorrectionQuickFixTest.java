@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -11,7 +13,8 @@
 
 package org.eclipse.jdt.ls.core.internal.correction;
 
-import java.util.Arrays;
+import static org.mockito.Mockito.when;
+
 import java.util.Hashtable;
 import java.util.Map;
 
@@ -20,6 +23,10 @@ import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.ls.core.internal.CodeActionUtil;
+import org.eclipse.jdt.ls.core.internal.JDTUtils;
+import org.eclipse.jdt.ls.core.internal.preferences.ClientPreferences;
+import org.eclipse.lsp4j.Range;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -39,7 +46,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		fJProject1.setOptions(options);
 
 		fSourceFolder = fJProject1.getPackageFragmentRoot(fJProject1.getProject().getFolder("src"));
-		this.setIgnoredCommands(Arrays.asList("Extract.*"));
+		this.setIgnoredCommands("Extract.*");
 	}
 
 	@Test
@@ -65,6 +72,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		buf.append("\n");
 		buf.append("    @Override\n");
 		buf.append("    public void foo() {\n");
+		buf.append("        // TODO Auto-generated method stub\n");
 		buf.append("        \n");
 		buf.append("    }\n");
 		buf.append("}\n");
@@ -96,6 +104,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		buf.append("\n");
 		buf.append("    @Override\n");
 		buf.append("    public void foo() {\n");
+		buf.append("        // TODO Auto-generated method stub\n");
 		buf.append("        \n");
 		buf.append("    }\n");
 		buf.append("}\n");
@@ -138,9 +147,16 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        this.count = count;\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'count'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'count'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
+	}
+
+	@Test
+	public void testUnusedPrivateFieldWithResourceOperationSupport() throws Exception {
+		ClientPreferences clientPreferences = preferenceManager.getClientPreferences();
+		when(clientPreferences.isResourceOperationSupported()).thenReturn(true);
+		testUnusedPrivateField();
 	}
 
 	@Test
@@ -179,7 +195,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        this.color = color;\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'color'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'color'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -225,7 +241,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        this.count = count;\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'count'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'count'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -1007,6 +1023,110 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 	}
 
 	@Test
+	public void testMultiCatchUncaughtExceptions() throws Exception {
+
+		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("import java.io.EOFException;\n");
+		buf.append("import java.io.FileNotFoundException;\n");
+		buf.append("public class E {\n");
+		buf.append("    public void foo() throws EOFException {}\n");
+		buf.append("    public void bar() throws FileNotFoundException {}\n");
+		buf.append("    public void test() {\n");
+		buf.append("        System.out.println(1);\n");
+		buf.append("        foo();\n");
+		buf.append("        System.out.println(2);\n");
+		buf.append("        bar();\n");
+		buf.append("        System.out.println(3);\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+
+		buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("import java.io.EOFException;\n");
+		buf.append("import java.io.FileNotFoundException;\n");
+		buf.append("public class E {\n");
+		buf.append("    public void foo() throws EOFException {}\n");
+		buf.append("    public void bar() throws FileNotFoundException {}\n");
+		buf.append("    public void test() {\n");
+		buf.append("        try {\n");
+		buf.append("            System.out.println(1);\n");
+		buf.append("            foo();\n");
+		buf.append("            System.out.println(2);\n");
+		buf.append("            bar();\n");
+		buf.append("            System.out.println(3);\n");
+		buf.append("        } catch (EOFException | FileNotFoundException e) {\n");
+		buf.append("            // TODO Auto-generated catch block\n");
+		buf.append("            e.printStackTrace();\n");
+		buf.append("        }\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		Expected e1 = new Expected("Surround with try/multi-catch", buf.toString());
+
+		String beginningExpr = "System.out.println(1);";
+		String endingExpr = "System.out.println(3);";
+		String sourceCode = cu.getSource();
+		int offset = sourceCode.indexOf(beginningExpr);
+		int length = sourceCode.indexOf(endingExpr) - offset + endingExpr.length();
+		Range selection = JDTUtils.toRange(cu, offset, length);
+		assertCodeActions(cu, selection, e1);
+	}
+
+	@Test
+	public void testMultiCatchUncaughtExceptions2() throws Exception {
+
+		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("import java.io.EOFException;\n");
+		buf.append("import java.io.FileNotFoundException;\n");
+		buf.append("public class E {\n");
+		buf.append("    public void foo() throws EOFException {}\n");
+		buf.append("    public void bar() throws FileNotFoundException {}\n");
+		buf.append("    public void test() {\n");
+		buf.append("        System.out.println(1);\n");
+		buf.append("        foo();\n");
+		buf.append("        System.out.println(2);\n");
+		buf.append("        bar();\n");
+		buf.append("        System.out.println(3);\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+
+		buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("import java.io.EOFException;\n");
+		buf.append("import java.io.FileNotFoundException;\n");
+		buf.append("public class E {\n");
+		buf.append("    public void foo() throws EOFException {}\n");
+		buf.append("    public void bar() throws FileNotFoundException {}\n");
+		buf.append("    public void test() {\n");
+		buf.append("        System.out.println(1);\n");
+		buf.append("        try {\n");
+		buf.append("            foo();\n");
+		buf.append("            System.out.println(2);\n");
+		buf.append("            bar();\n");
+		buf.append("        } catch (EOFException | FileNotFoundException e) {\n");
+		buf.append("            // TODO Auto-generated catch block\n");
+		buf.append("            e.printStackTrace();\n");
+		buf.append("        }\n");
+		buf.append("        System.out.println(3);\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		Expected e1 = new Expected("Surround with try/multi-catch", buf.toString());
+
+		String beginningExpr = "foo();";
+		String endingExpr = "bar();";
+		String sourceCode = cu.getSource();
+		int offset = sourceCode.indexOf(beginningExpr);
+		int length = sourceCode.indexOf(endingExpr) - offset + endingExpr.length();
+		Range selection = JDTUtils.toRange(cu, offset, length);
+		assertCodeActions(cu, selection, e1);
+	}
+
+	@Test
 	public void testUncaughtExceptionOnSuper1() throws Exception {
 
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
@@ -1606,7 +1726,7 @@ public class LocalCorrectionQuickFixTest extends AbstractQuickFixTest {
 	public void testRemoveUnreachableCodeStmt() throws Exception {
 		Hashtable<String, String> hashtable = JavaCore.getOptions();
 		hashtable.put(JavaCore.COMPILER_PB_UNNECESSARY_ELSE, JavaCore.IGNORE);
-		JavaCore.setOptions(hashtable);
+		fJProject1.setOptions(hashtable);
 
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
 		StringBuilder buf = new StringBuilder();

@@ -4,6 +4,7 @@
    <extension-point id="org.eclipse.jdt.ls.core.delegateCommandHandler" name="delegateCommandHandler" schema="schema/org.eclipse.jdt.ls.core.delegateCommandHandler.exsd"/>
    <extension-point id="org.eclipse.jdt.ls.core.importers" name="JDT LS Project Importer" schema="schema/org.eclipse.jdt.ls.core.importers.exsd"/>
    <extension-point id="org.eclipse.jdt.ls.core.contentProvider" name="contentProvider" schema="schema/org.eclipse.jdt.ls.core.contentProvider.exsd"/>
+   <extension-point id="org.eclipse.jdt.ls.core.buildSupport" name="Build Support" schema="schema/org.eclipse.jdt.ls.core.buildSupport.exsd"/>
    <extension
          id="id1"
          point="org.eclipse.core.runtime.applications">
@@ -51,23 +52,123 @@
    <extension
          point="org.eclipse.jdt.ls.core.delegateCommandHandler">
       <delegateCommandHandler class="org.eclipse.jdt.ls.core.internal.JDTDelegateCommandHandler">
-            <command id="java.edit.organizeImports"/>
+            <command
+                  id="java.edit.organizeImports">
+            </command>
+            <command
+                  id="java.edit.stringFormatting">
+            </command>
+            <command
+                  id="java.project.updateSourceAttachment">
+            </command>
+            <command
+                  id="java.project.resolveSourceAttachment">
+            </command>
+            <command
+                  id="java.project.addToSourcePath">
+            </command>
+            <command
+                  id="java.project.removeFromSourcePath">
+            </command>
+            <command
+                  id="java.project.listSourcePaths">
+            </command>
+            <command
+                  id="java.project.getSettings">
+            </command>
+            <command
+                  id="java.project.getClasspaths">
+            </command>
+            <command
+                  id="java.project.isTestFile">
+            </command>
+            <command
+                  id="java.project.getAll">
+            </command>
+            <command
+                  id="java.project.refreshDiagnostics">
+            </command>
+            <command
+                  id="java.project.provideSemanticTokens">
+            </command>
+            <command
+                  id="java.project.getSemanticTokensLegend">
+            </command>
+            <command
+                  id="java.project.import">
+            </command>
+            <command
+                  id="java.project.resolveStackTraceLocation">
+            </command>
+            <command
+                  id="java.navigate.openTypeHierarchy">
+            </command>
+            <command
+                  id="java.navigate.resolveTypeHierarchy">
+            </command>
       </delegateCommandHandler>
    </extension>
    <extension
          id="importers"
          point="org.eclipse.jdt.ls.core.importers">
          <importer
-         	id = "gradleProjectImporter"
-         	order ="300"
-         	class = "org.eclipse.jdt.ls.core.internal.managers.GradleProjectImporter"/> 
+            id = "gradleProjectImporter"
+            order ="300"
+            class = "org.eclipse.jdt.ls.core.internal.managers.GradleProjectImporter"/>
          <importer
-         	id = "mavenProjectImporter"
-         	order = "400"
-         	class = "org.eclipse.jdt.ls.core.internal.managers.MavenProjectImporter"/>
+            id = "mavenProjectImporter"
+            order = "400"
+            class = "org.eclipse.jdt.ls.core.internal.managers.MavenProjectImporter"/>
          <importer
-         	id = "eclipseProjectImporter"
-         	order = "1000"
-         	class = "org.eclipse.jdt.ls.core.internal.managers.EclipseProjectImporter"/>       	
+            id = "eclipseProjectImporter"
+            order = "1000"
+            class = "org.eclipse.jdt.ls.core.internal.managers.EclipseProjectImporter"/>
+         <importer
+            id="invisibleProjectImporter"
+            order="1500"
+            class="org.eclipse.jdt.ls.core.internal.managers.InvisibleProjectImporter" />
+   </extension>
+   <extension
+   		 id="buildSupport"
+         point="org.eclipse.jdt.ls.core.buildSupport">
+         <buildSupport
+         	id="gradleBuildSupport"
+         	order="300"
+         	class="org.eclipse.jdt.ls.core.internal.managers.GradleBuildSupport" />
+         <buildSupport
+         	id="mavenBuildSupport"
+         	order="400"
+         	class="org.eclipse.jdt.ls.core.internal.managers.MavenBuildSupport" />
+     	 <buildSupport
+	     	id="invisibleProjectBuildSupport"
+	     	order="1000"
+	     	class="org.eclipse.jdt.ls.core.internal.managers.InvisibleProjectBuildSupport" />
+     	<buildSupport
+	     	id="defaultProjectBuildSupport"
+	     	order="1500"
+	     	class="org.eclipse.jdt.ls.core.internal.managers.DefaultProjectBuildSupport" />
+     	<buildSupport
+	     	id="eclipseBuildSupport"
+	     	order="2000"
+	     	class="org.eclipse.jdt.ls.core.internal.managers.EclipseBuildSupport" />
+   </extension>
+   <extension
+         point="org.eclipse.ltk.core.refactoring.refactoringContributions">
+      <contribution
+            class="org.eclipse.jdt.ls.core.internal.corext.refactoring.ChangeMethodSignatureRefactoringContribution"
+            id="org.eclipse.jdt.ls.change.method.signature"/>
+   </extension>
+      <extension
+         point="org.eclipse.jdt.launching.executionEnvironments">
+      <ruleParticipant
+            class="org.eclipse.jdt.ls.core.internal.javafx.FXAccessRuleParticipant"
+            id="org.eclipse.jdt.ls.core.fxrule">
+      </ruleParticipant>
+   </extension>
+   <extension
+         point="org.eclipse.jdt.launching.libraryLocationResolvers">
+      <resolver
+            class="org.eclipse.jdt.ls.core.internal.javafx.FXLibraryLocationResolver">
+      </resolver>
    </extension>
 </plugin>

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -11,6 +13,7 @@
 package org.eclipse.jdt.ls.core.internal.managers;
 
 import static org.eclipse.jdt.ls.core.internal.ProjectUtils.getJavaSourceLevel;
+import static org.eclipse.jdt.ls.core.internal.WorkspaceHelper.getProject;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -30,13 +33,19 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.jobs.IJobChangeEvent;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.jobs.JobChangeAdapter;
+import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.ProjectUtils;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
+import org.eclipse.jdt.ls.core.internal.handlers.ProgressReporterManager;
+import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager.CHANGE_TYPE;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -91,9 +100,38 @@ public class MavenProjectImporterTest extends AbstractMavenBasedTest {
 	}
 
 	@Test
+	public void testNodeModules() throws Exception {
+		ProgressReporter progressReporter = new ProgressReporter();
+		ProgressReporterManager progressManager = new ProgressReporterManager(this.client, preferenceManager) {
+
+			@Override
+			public IProgressMonitor getDefaultMonitor() {
+				return progressReporter;
+			}
+
+			@Override
+			public IProgressMonitor createMonitor(Job job) {
+				return progressReporter;
+			}
+
+			@Override
+			public IProgressMonitor getProgressReporter(CancelChecker checker) {
+				return progressReporter;
+			}
+
+		};
+		Job.getJobManager().setProgressProvider(progressManager);
+		monitor = progressManager.getDefaultMonitor();
+		importProjects("maven/salut5");
+		IProject proj = WorkspaceHelper.getProject("proj");
+		assertIsMavenProject(proj);
+		assertFalse("node_modules has been scanned", progressReporter.isScanned());
+	}
+
+	@Test
 	public void testUnzippedSourceImportExclusions() throws Exception {
 		List<IProject> projects = importProjects("maven/unzipped-sources");
-		assertEquals(Arrays.asList(projectsManager.getDefaultProject()), projects);
+		assertEquals(Arrays.asList(ProjectsManager.getDefaultProject()), projects);
 	}
 
 	@Test
@@ -128,6 +166,24 @@ public class MavenProjectImporterTest extends AbstractMavenBasedTest {
 		assertEquals(2, projects.size());
 		invalid = WorkspaceHelper.getProject(INVALID);
 		assertIsMavenProject(invalid);
+	}
+
+	@Test
+	public void testDeleteClasspath() throws Exception {
+		String name = "salut";
+		importProjects("maven/" + name);
+		IProject project = getProject(name);
+		assertIsJavaProject(project);
+		assertIsMavenProject(project);
+		IFile dotClasspath = project.getFile(IJavaProject.CLASSPATH_FILE_NAME);
+		File file = dotClasspath.getRawLocation().toFile();
+		assertTrue(file.exists());
+		file.delete();
+		projectsManager.fileChanged(file.toPath().toUri().toString(), CHANGE_TYPE.DELETED);
+		project = getProject(name);
+		IFile bin = project.getFile("bin");
+		assertFalse(bin.getRawLocation().toFile().exists());
+		assertTrue(dotClasspath.exists());
 	}
 
 	@Test
@@ -226,6 +282,63 @@ public class MavenProjectImporterTest extends AbstractMavenBasedTest {
 	}
 
 	@Test
+	public void testJava12Project() throws Exception {
+		IProject project = importMavenProject("salut-java12");
+		assertIsJavaProject(project);
+		assertEquals("12", getJavaSourceLevel(project));
+		IJavaProject javaProject = JavaCore.create(project);
+		assertEquals(JavaCore.ENABLED, javaProject.getOption(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, false));
+		assertEquals(JavaCore.IGNORE, javaProject.getOption(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, false));
+		// https://bugs.eclipse.org/bugs/show_bug.cgi?id=549258#c9
+		assertHasErrors(project, "Preview features enabled at an invalid source release level");
+	}
+
+	@Test
+	public void testJava13Project() throws Exception {
+		IProject project = importMavenProject("salut-java13");
+		assertIsJavaProject(project);
+		assertEquals("13", getJavaSourceLevel(project));
+		IJavaProject javaProject = JavaCore.create(project);
+		assertEquals(JavaCore.ENABLED, javaProject.getOption(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, false));
+		assertEquals(JavaCore.IGNORE, javaProject.getOption(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, false));
+		// https://bugs.eclipse.org/bugs/show_bug.cgi?id=549258#c9
+		assertHasErrors(project, "Preview features enabled at an invalid source release level");
+	}
+
+	@Test
+	public void testJava14Project() throws Exception {
+		IProject project = importMavenProject("salut-java14");
+		assertIsJavaProject(project);
+		assertEquals("14", getJavaSourceLevel(project));
+		IJavaProject javaProject = JavaCore.create(project);
+		assertEquals(JavaCore.ENABLED, javaProject.getOption(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, false));
+		assertEquals(JavaCore.IGNORE, javaProject.getOption(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, false));
+		assertHasErrors(project, "Preview features enabled at an invalid source release level");
+	}
+
+	@Test
+	public void testJava15Project() throws Exception {
+		IProject project = importMavenProject("salut-java15");
+		assertIsJavaProject(project);
+		assertEquals("15", getJavaSourceLevel(project));
+		IJavaProject javaProject = JavaCore.create(project);
+		assertEquals(JavaCore.ENABLED, javaProject.getOption(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, false));
+		assertEquals(JavaCore.IGNORE, javaProject.getOption(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, false));
+		assertHasErrors(project, "Preview features enabled at an invalid source release level");
+	}
+
+	@Test
+	public void testJava16Project() throws Exception {
+		IProject project = importMavenProject("salut-java16");
+		assertIsJavaProject(project);
+		assertEquals("16", getJavaSourceLevel(project));
+		IJavaProject javaProject = JavaCore.create(project);
+		assertEquals(JavaCore.ENABLED, javaProject.getOption(JavaCore.COMPILER_PB_ENABLE_PREVIEW_FEATURES, false));
+		assertEquals(JavaCore.IGNORE, javaProject.getOption(JavaCore.COMPILER_PB_REPORT_PREVIEW_FEATURES, false));
+		assertNoErrors(project);
+	}
+
+	@Test
 	public void testAnnotationProcessing() throws Exception {
 		IProject project = importMavenProject("autovalued");
 		assertIsJavaProject(project);
@@ -244,6 +357,31 @@ public class MavenProjectImporterTest extends AbstractMavenBasedTest {
 			if ("Update Maven project configuration".equals(jobName)) {
 				updateProjectJobCalled++;
 			}
+		}
+
+	}
+
+	private static class ProgressReporter extends NullProgressMonitor {
+		private boolean scanned = false;
+
+		public boolean isScanned() {
+			return scanned;
+		}
+
+		public ProgressReporter() {
+			super();
+		}
+
+		@Override
+		public void subTask(String name) {
+			if (name != null && name.endsWith("node_modules/sub")) {
+				scanned = true;
+			}
+		}
+
+		@Override
+		public boolean isCanceled() {
+			return false;
 		}
 	}
 

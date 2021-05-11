@@ -1,15 +1,19 @@
 /*******************************************************************************
  * Copyright (c) 2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.handlers;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -22,6 +26,7 @@ import org.eclipse.jdt.ls.core.internal.JavaClientConnection.JavaLanguageClient;
 import org.eclipse.jdt.ls.core.internal.ProgressReport;
 import org.eclipse.jdt.ls.core.internal.ServiceStatus;
 import org.eclipse.jdt.ls.core.internal.StatusReport;
+import org.eclipse.jdt.ls.core.internal.managers.MavenProjectImporter;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
@@ -46,7 +51,9 @@ public class ProgressReporterManager extends ProgressProvider {
 	@Override
 	public IProgressMonitor createMonitor(Job job) {
 		if (job.belongsTo(InitHandler.JAVA_LS_INITIALIZATION_JOBS)) {
-			return new ServerStatusMonitor();
+			// for backward compatibility
+			List<IProgressMonitor> monitors = Arrays.asList(new ServerStatusMonitor(), createJobMonitor(job));
+			return new MulticastProgressReporter(monitors);
 		}
 		IProgressMonitor monitor = createJobMonitor(job);
 		return monitor;
@@ -75,8 +82,78 @@ public class ProgressReporterManager extends ProgressProvider {
 		this.delay = delay;
 	}
 
+	private class MulticastProgressReporter implements IProgressMonitor {
+		protected List<IProgressMonitor> monitors;
+
+		public MulticastProgressReporter(List<IProgressMonitor> monitors) {
+			this.monitors = monitors;
+		}
+
+		@Override
+		public void done() {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.done();
+			}
+		}
+
+		@Override
+		public boolean isCanceled() {
+			for (IProgressMonitor monitor : monitors) {
+				if (!monitor.isCanceled()) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		@Override
+		public void beginTask(String name, int totalWork) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.beginTask(name, totalWork);
+			}
+		}
+
+		@Override
+		public void internalWorked(double work) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.internalWorked(work);
+			}
+		}
+
+		@Override
+		public void setCanceled(boolean cancelled) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.setCanceled(cancelled);
+			}
+		}
+
+		@Override
+		public void setTaskName(String name) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.setTaskName(name);
+			}
+		}
+
+		@Override
+		public void subTask(String name) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.subTask(name);
+			}
+		}
+
+		@Override
+		public void worked(int work) {
+			for (IProgressMonitor monitor : monitors) {
+				monitor.worked(work);
+			}
+		}
+	}
+
 	private class ProgressReporter extends CancellableProgressMonitor {
 
+		protected static final String SEPARATOR = " - ";
+		protected static final String IMPORTING_MAVEN_PROJECTS = "Importing Maven project(s)";
 		protected Job job;
 		protected int totalWork;
 		protected String taskName;
@@ -99,7 +176,6 @@ public class ProgressReporterManager extends ProgressProvider {
 			super(checker);
 		}
 
-
 		@Override
 		public void setTaskName(String name) {
 			super.setTaskName(name);
@@ -116,6 +192,10 @@ public class ProgressReporterManager extends ProgressProvider {
 		@Override
 		public void subTask(String name) {
 			this.subTaskName = name;
+			if (IMPORTING_MAVEN_PROJECTS.equals(taskName) && (subTaskName == null || subTaskName.isEmpty())) {
+				// completed or failed transfer
+				return;
+			}
 			sendProgress();
 		}
 
@@ -160,13 +240,23 @@ public class ProgressReporterManager extends ProgressProvider {
 			progressReport.setTotalWork(totalWork);
 			progressReport.setWorkDone(progress);
 			progressReport.setComplete(isDone());
-			progressReport.setStatus(formatMessage(task));
+			if (task != null && subTaskName != null && !subTaskName.isEmpty() && task.equals(MavenProjectImporter.IMPORTING_MAVEN_PROJECTS)) {
+				progressReport.setStatus(task + SEPARATOR + subTaskName);
+			} else {
+				progressReport.setStatus(formatMessage(task));
+			}
 			client.sendProgressReport(progressReport);
 		}
 
 
 		protected String formatMessage(String task) {
-			return (totalWork > 0) ? String.format("%s - %.0f%%", task, ((double) progress / totalWork) * 100) : task;
+			String message = getMessage(task);
+			return (totalWork > 0) ? String.format("%.0f%% %s", ((double) progress / totalWork) * 100, message) : message;
+		}
+
+		protected String getMessage(String task) {
+			String message = subTaskName == null || subTaskName.isEmpty() ? "" : subTaskName;
+			return message;
 		}
 	}
 
@@ -176,8 +266,11 @@ public class ProgressReporterManager extends ProgressProvider {
 
 		@Override
 		protected String formatMessage(String task) {
-			String message = this.taskName == null || this.taskName.length() == 0 ? "" : ("- " + this.taskName);
-			return String.format("%.0f%% Starting Java Language Server %s", ((double) progress / totalWork) * 100, message);
+			String message = getMessage(task);
+			if (totalWork > 0 && !message.isEmpty()) {
+				message = SEPARATOR + message;
+			}
+			return String.format("%.0f%% Starting Java Language Server%s", ((double) progress / totalWork) * 100, message);
 		}
 
 		@Override
@@ -185,8 +278,10 @@ public class ProgressReporterManager extends ProgressProvider {
 			if (client == null) {
 				return;
 			}
-			String message = formatMessage(subTaskName);
+			String task = StringUtils.defaultIfBlank(taskName, (job == null || StringUtils.isBlank(job.getName())) ? "Background task" : job.getName());
+			String message = formatMessage(task);
 			client.sendStatusReport(new StatusReport().withType(ServiceStatus.Starting.name()).withMessage(message));
 		}
+
 	}
 }

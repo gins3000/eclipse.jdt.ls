@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2012 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.ui.text.correction.SerialVersionSubProcessor
  *
@@ -19,14 +21,14 @@ import java.util.Map;
 import org.eclipse.core.runtime.Assert;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.manipulation.CleanUpOptionsCore;
 import org.eclipse.jdt.internal.corext.fix.CleanUpConstants;
-import org.eclipse.jdt.internal.corext.fix.CleanUpOptions;
+import org.eclipse.jdt.internal.corext.fix.ICleanUpCore;
 import org.eclipse.jdt.internal.corext.fix.IProposableFix;
+import org.eclipse.jdt.internal.corext.fix.PotentialProgrammingProblemsFixCore;
+import org.eclipse.jdt.internal.ui.fix.PotentialProgrammingProblemsCleanUpCore;
 import org.eclipse.jdt.internal.ui.text.correction.IProblemLocationCore;
-import org.eclipse.jdt.ls.core.internal.corext.fix.ICleanUp;
-import org.eclipse.jdt.ls.core.internal.corext.fix.PotentialProgrammingProblemsCleanUp;
-import org.eclipse.jdt.ls.core.internal.corext.fix.PotentialProgrammingProblemsFix;
-import org.eclipse.jdt.ls.core.internal.corrections.proposals.CUCorrectionProposal;
+import org.eclipse.jdt.ls.core.internal.corrections.proposals.ChangeCorrectionProposal;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.FixCorrectionProposal;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.IProposalRelevance;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
@@ -50,15 +52,15 @@ public final class SerialVersionSubProcessor {
 			return fIsDefaultProposal;
 		}
 
-		private static ICleanUp createCleanUp(boolean isDefault) {
+		private static ICleanUpCore createCleanUp(boolean isDefault) {
 			Map<String, String> options = new Hashtable<>();
-			options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID, CleanUpOptions.TRUE);
+			options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID, CleanUpOptionsCore.TRUE);
 			if (isDefault) {
-				options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID_DEFAULT, CleanUpOptions.TRUE);
+				options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID_DEFAULT, CleanUpOptionsCore.TRUE);
 			} else {
-				options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID_GENERATED, CleanUpOptions.TRUE);
+				options.put(CleanUpConstants.ADD_MISSING_SERIAL_VERSION_ID_GENERATED, CleanUpOptionsCore.TRUE);
 			}
-			return new PotentialProgrammingProblemsCleanUp(options);
+			return new PotentialProgrammingProblemsCleanUpCore(options);
 		}
 
 		@Override
@@ -81,13 +83,13 @@ public final class SerialVersionSubProcessor {
 	 * @param proposals
 	 *            the proposal collection to extend
 	 */
-	public static final void getSerialVersionProposals(final IInvocationContext context, final IProblemLocationCore location, final Collection<CUCorrectionProposal> proposals) {
+	public static final void getSerialVersionProposals(final IInvocationContext context, final IProblemLocationCore location, final Collection<ChangeCorrectionProposal> proposals) {
 
 		Assert.isNotNull(context);
 		Assert.isNotNull(location);
 		Assert.isNotNull(proposals);
 
-		IProposableFix[] fixes = PotentialProgrammingProblemsFix.createMissingSerialVersionFixes(context.getASTRoot(), location);
+		IProposableFix[] fixes = PotentialProgrammingProblemsFixCore.createMissingSerialVersionFixes(context.getASTRoot(), location);
 		if (fixes != null) {
 			proposals.add(new SerialVersionProposal(fixes[0], IProposalRelevance.MISSING_SERIAL_VERSION_DEFAULT, context, true));
 			ICompilationUnit unit = context.getCompilationUnit();

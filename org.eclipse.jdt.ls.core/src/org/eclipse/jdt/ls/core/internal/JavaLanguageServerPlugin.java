@@ -1,9 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2016-2017 Red Hat Inc. and others.
+ * Copyright (c) 2016-2019 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -36,6 +38,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.eclipse.core.internal.net.ProxySelector;
 import org.eclipse.core.net.proxy.IProxyData;
 import org.eclipse.core.net.proxy.IProxyService;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceDescription;
 import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
@@ -47,23 +51,42 @@ import org.eclipse.core.runtime.preferences.DefaultScope;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.jdt.core.WorkingCopyOwner;
 import org.eclipse.jdt.core.manipulation.JavaManipulation;
+import org.eclipse.jdt.internal.codeassist.impl.AssistOptions;
+import org.eclipse.jdt.internal.core.JavaModelManager;
 import org.eclipse.jdt.internal.core.manipulation.JavaManipulationPlugin;
 import org.eclipse.jdt.internal.core.manipulation.MembersOrderPreferenceCacheCommon;
+import org.eclipse.jdt.internal.core.search.indexing.IndexManager;
+import org.eclipse.jdt.internal.corext.codemanipulation.CodeGenerationSettingsConstants;
+import org.eclipse.jdt.internal.corext.template.java.VarResolver;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection.JavaLanguageClient;
+import org.eclipse.jdt.ls.core.internal.contentassist.TypeFilter;
+import org.eclipse.jdt.ls.core.internal.corext.template.java.JavaContextType;
+import org.eclipse.jdt.ls.core.internal.corext.template.java.JavaLanguageServerTemplateStore;
 import org.eclipse.jdt.ls.core.internal.handlers.JDTLanguageServer;
 import org.eclipse.jdt.ls.core.internal.managers.ContentProviderManager;
 import org.eclipse.jdt.ls.core.internal.managers.DigestStore;
+import org.eclipse.jdt.ls.core.internal.managers.ISourceDownloader;
+import org.eclipse.jdt.ls.core.internal.managers.MavenSourceDownloader;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
+import org.eclipse.jdt.ls.core.internal.managers.StandardProjectsManager;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
+import org.eclipse.jdt.ls.core.internal.preferences.StandardPreferenceManager;
+import org.eclipse.jdt.ls.core.internal.syntaxserver.SyntaxLanguageServer;
+import org.eclipse.jdt.ls.core.internal.syntaxserver.SyntaxProjectsManager;
+import org.eclipse.jface.text.templates.TemplateVariableResolver;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.MessageConsumer;
+import org.eclipse.text.templates.ContextTypeRegistry;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleException;
 import org.osgi.util.tracker.ServiceTracker;
 
+import com.google.common.base.Throwables;
+
 public class JavaLanguageServerPlugin extends Plugin {
 
+	private static final String JDT_UI_PLUGIN = "org.eclipse.jdt.ui";
 	public static final String MANUAL = "Manual";
 	public static final String HTTP_NON_PROXY_HOSTS = "http.nonProxyHosts";
 	public static final String HTTPS_NON_PROXY_HOSTS = "https.nonProxyHosts";
@@ -75,6 +98,9 @@ public class JavaLanguageServerPlugin extends Plugin {
 	public static final String HTTP_PROXY_HOST = "http.proxyHost";
 	public static final String HTTPS_PROXY_USER = "https.proxyUser";
 	public static final String HTTP_PROXY_USER = "http.proxyUser";
+
+	private static final String LOGBACK_CONFIG_FILE_PROPERTY = "logback.configurationFile";
+	private static final String LOGBACK_DEFAULT_FILENAME = "logback.xml";
 
 	/**
 	 * Source string send to clients for messages such as diagnostics.
@@ -89,7 +115,6 @@ public class JavaLanguageServerPlugin extends Plugin {
 
 	public static final String DEFAULT_MEMBER_SORT_ORDER = "T,SF,SI,SM,F,I,C,M"; //$NON-NLS-1$
 
-
 	private static JavaLanguageServerPlugin pluginInstance;
 	private static BundleContext context;
 	private ServiceTracker<IProxyService, IProxyService> proxyServiceTracker = null;
@@ -97,14 +122,23 @@ public class JavaLanguageServerPlugin extends Plugin {
 	private static PrintStream out;
 	private static PrintStream err;
 
+	private ISourceDownloader sourceDownloader;
+
 	private LanguageServer languageServer;
 	private ProjectsManager projectsManager;
 	private DigestStore digestStore;
 	private ContentProviderManager contentProviderManager;
 
-	private JDTLanguageServer protocol;
+	private BaseJDTLanguageServer protocol;
 
 	private PreferenceManager preferenceManager;
+
+	private TypeFilter typeFilter;
+
+	private ContextTypeRegistry fContextTypeRegistry;
+	private JavaLanguageServerTemplateStore fTemplateStore;
+
+	private DiagnosticsState nonProjectDiagnosticsState;
 
 	public static LanguageServer getLanguageServer() {
 		return pluginInstance == null ? null : pluginInstance.languageServer;
@@ -123,37 +157,105 @@ public class JavaLanguageServerPlugin extends Plugin {
 		super.start(bundleContext);
 		try {
 			Platform.getBundle(ResourcesPlugin.PI_RESOURCES).start(Bundle.START_TRANSIENT);
+			IWorkspace workspace = ResourcesPlugin.getWorkspace();
+			IWorkspaceDescription description = workspace.getDescription();
+			description.setAutoBuilding(false);
+			workspace.setDescription(description);
 		} catch (BundleException e) {
 			logException(e.getMessage(), e);
 		}
+		boolean isDebug = Boolean.getBoolean("jdt.ls.debug");
 		try {
-			redirectStandardStreams();
+			redirectStandardStreams(isDebug);
 		} catch (FileNotFoundException e) {
 			logException(e.getMessage(), e);
 		}
 		JavaLanguageServerPlugin.context = bundleContext;
 		JavaLanguageServerPlugin.pluginInstance = this;
-		// Set the ID to use for preference lookups
-		JavaManipulation.setPreferenceNodeId(PLUGIN_ID);
+		setPreferenceNodeId();
 
+		if (JDTEnvironmentUtils.isSyntaxServer()) {
+			disableServices();
+			preferenceManager = new PreferenceManager();
+			projectsManager = new SyntaxProjectsManager(preferenceManager);
+		} else {
+			preferenceManager = new StandardPreferenceManager();
+			projectsManager = new StandardProjectsManager(preferenceManager);
+		}
 		IEclipsePreferences fDefaultPreferenceStore = DefaultScope.INSTANCE.getNode(JavaManipulation.getPreferenceNodeId());
-		fDefaultPreferenceStore.put(MembersOrderPreferenceCacheCommon.APPEARANCE_MEMBER_SORT_ORDER, DEFAULT_MEMBER_SORT_ORDER);
+		fDefaultPreferenceStore.put(JavaManipulationPlugin.CODEASSIST_FAVORITE_STATIC_MEMBERS, "");
 
-		// initialize MembersOrderPreferenceCacheCommon used by BodyDeclarationRewrite
-		MembersOrderPreferenceCacheCommon preferenceCache = JavaManipulationPlugin.getDefault().getMembersOrderPreferenceCacheCommon();
-		preferenceCache.install();
-
-		preferenceManager = new PreferenceManager();
 		digestStore = new DigestStore(getStateLocation().toFile());
-		projectsManager = new ProjectsManager(preferenceManager);
 		try {
-			ResourcesPlugin.getWorkspace().addSaveParticipant(PLUGIN_ID, projectsManager);
+			ResourcesPlugin.getWorkspace().addSaveParticipant(IConstants.PLUGIN_ID, projectsManager);
 		} catch (CoreException e) {
 			logException(e.getMessage(), e);
 		}
 		contentProviderManager = new ContentProviderManager(preferenceManager);
+		nonProjectDiagnosticsState = new DiagnosticsState();
 		logInfo(getClass() + " is started");
 		configureProxy();
+		// turn off substring code completion if isn't explicitly set
+		if (System.getProperty(AssistOptions.PROPERTY_SubstringMatch) == null) {
+			System.setProperty(AssistOptions.PROPERTY_SubstringMatch, "false");
+		}
+
+		if (isDebug && System.getProperty(LOGBACK_CONFIG_FILE_PROPERTY) == null) {
+			File stateDir = getStateLocation().toFile();
+			File configFile = new File(stateDir, LOGBACK_DEFAULT_FILENAME);
+			if (!configFile.isFile()) {
+				try (InputStream is = bundleContext.getBundle().getEntry(LOGBACK_DEFAULT_FILENAME).openStream(); FileOutputStream fos = new FileOutputStream(configFile)) {
+					for (byte[] buffer = new byte[1024 * 4];;) {
+						int n = is.read(buffer);
+						if (n < 0) {
+							break;
+						}
+						fos.write(buffer, 0, n);
+					}
+				}
+			}
+			// ContextInitializer.CONFIG_FILE_PROPERTY
+			System.setProperty(LOGBACK_CONFIG_FILE_PROPERTY, configFile.getAbsolutePath());
+		}
+	}
+
+	private void disableServices() {
+		try {
+			ProjectsManager.setAutoBuilding(false);
+		} catch (CoreException e1) {
+			JavaLanguageServerPlugin.logException(e1);
+		}
+
+		IndexManager indexManager = JavaModelManager.getIndexManager();
+		if (indexManager != null) {
+			indexManager.shutdown();
+		}
+	}
+
+	private void setPreferenceNodeId() {
+		// a hack to ensure unit tests work in Eclipse and CLI builds on Mac
+		Bundle bundle = Platform.getBundle(JDT_UI_PLUGIN);
+		if (bundle != null && bundle.getState() != Bundle.ACTIVE) {
+			// start the org.eclipse.jdt.ui plugin if it exists
+			try {
+				bundle.start();
+			} catch (BundleException e) {
+				JavaLanguageServerPlugin.logException(e.getMessage(), e);
+			}
+		}
+		// if preferenceNodeId is already set, we have to nullify it
+		// https://git.eclipse.org/c/jdt/eclipse.jdt.ui.git/commit/?id=4c731bc9cc7e1cfd2e67746171aede8d7719e9c1
+		JavaManipulation.setPreferenceNodeId(null);
+		// Set the ID to use for preference lookups
+		JavaManipulation.setPreferenceNodeId(IConstants.PLUGIN_ID);
+
+		IEclipsePreferences fDefaultPreferenceStore = DefaultScope.INSTANCE.getNode(JavaManipulation.getPreferenceNodeId());
+		fDefaultPreferenceStore.put(MembersOrderPreferenceCacheCommon.APPEARANCE_MEMBER_SORT_ORDER, DEFAULT_MEMBER_SORT_ORDER);
+		fDefaultPreferenceStore.put(CodeGenerationSettingsConstants.CODEGEN_USE_OVERRIDE_ANNOTATION, Boolean.TRUE.toString());
+
+		// initialize MembersOrderPreferenceCacheCommon used by BodyDeclarationRewrite
+		MembersOrderPreferenceCacheCommon preferenceCache = JavaManipulationPlugin.getDefault().getMembersOrderPreferenceCacheCommon();
+		preferenceCache.install();
 	}
 
 	private void configureProxy() {
@@ -260,7 +362,11 @@ public class JavaLanguageServerPlugin extends Plugin {
 	private void startConnection() throws IOException {
 		Launcher<JavaLanguageClient> launcher;
 		ExecutorService executorService = Executors.newCachedThreadPool();
-		protocol = new JDTLanguageServer(projectsManager, preferenceManager);
+		if (JDTEnvironmentUtils.isSyntaxServer()) {
+			protocol = new SyntaxLanguageServer(contentProviderManager, projectsManager, preferenceManager);
+		} else {
+			protocol = new JDTLanguageServer(projectsManager, preferenceManager);
+		}
 		if (JDTEnvironmentUtils.inSocketStreamDebugMode()) {
 			String host = JDTEnvironmentUtils.getClientHost();
 			Integer port = JDTEnvironmentUtils.getClientPort();
@@ -279,7 +385,12 @@ public class JavaLanguageServerPlugin extends Plugin {
 			ConnectionStreamFactory connectionFactory = new ConnectionStreamFactory();
 			InputStream in = connectionFactory.getInputStream();
 			OutputStream out = connectionFactory.getOutputStream();
-			Function<MessageConsumer, MessageConsumer> wrapper = new ParentProcessWatcher(this.languageServer);
+			Function<MessageConsumer, MessageConsumer> wrapper;
+			if ("false".equals(System.getProperty("watchParentProcess"))) {
+				wrapper = it -> it;
+			} else {
+				wrapper = new ParentProcessWatcher(this.languageServer);
+			}
 			launcher = Launcher.createLauncher(protocol, JavaLanguageClient.class, in, out, executorService, wrapper);
 		}
 		protocol.connectClient(launcher.getRemoteProxy());
@@ -295,7 +406,7 @@ public class JavaLanguageServerPlugin extends Plugin {
 		logInfo(getClass() + " is stopping:");
 		JavaLanguageServerPlugin.pluginInstance = null;
 		JavaLanguageServerPlugin.context = null;
-		ResourcesPlugin.getWorkspace().removeSaveParticipant(PLUGIN_ID);
+		ResourcesPlugin.getWorkspace().removeSaveParticipant(IConstants.PLUGIN_ID);
 		projectsManager = null;
 		contentProviderManager = null;
 		languageServer = null;
@@ -307,6 +418,10 @@ public class JavaLanguageServerPlugin extends Plugin {
 
 	public static JavaLanguageServerPlugin getInstance() {
 		return pluginInstance;
+	}
+
+	public static DiagnosticsState getNonProjectDiagnosticsState() {
+		return pluginInstance.nonProjectDiagnosticsState;
 	}
 
 	public static void log(IStatus status) {
@@ -328,6 +443,16 @@ public class JavaLanguageServerPlugin extends Plugin {
 	public static void logInfo(String message) {
 		if (context != null) {
 			log(new Status(IStatus.INFO, context.getBundle().getSymbolicName(), message));
+		}
+	}
+
+	public static void logException(Throwable ex) {
+		if (context != null) {
+			String message = ex.getMessage();
+			if (message == null) {
+				message = Throwables.getStackTraceAsString(ex);
+			}
+			logException(message, ex);
 		}
 	}
 
@@ -375,12 +500,11 @@ public class JavaLanguageServerPlugin extends Plugin {
 		return context == null ? "Unknown" : context.getBundle().getVersion().toString();
 	}
 
-	private static void redirectStandardStreams() throws FileNotFoundException {
+	private static void redirectStandardStreams(boolean isDebug) throws FileNotFoundException {
 		in = System.in;
 		out = System.out;
 		err = System.err;
 		System.setIn(new ByteArrayInputStream(new byte[0]));
-		boolean isDebug = Boolean.getBoolean("jdt.ls.debug");
 		if (isDebug) {
 			String id = "jdt.ls-" + new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
 			IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
@@ -438,7 +562,7 @@ public class JavaLanguageServerPlugin extends Plugin {
 		this.protocol = protocol;
 	}
 
-	public JDTLanguageServer getProtocol() {
+	public BaseJDTLanguageServer getProtocol() {
 		return protocol;
 	}
 
@@ -449,10 +573,68 @@ public class JavaLanguageServerPlugin extends Plugin {
 		return null;
 	}
 
+	/**
+	 * Returns the template context type registry for the java plug-in.
+	 *
+	 * @return the template context type registry for the java plug-in
+	 */
+	public synchronized ContextTypeRegistry getTemplateContextRegistry() {
+		if (fContextTypeRegistry == null) {
+			ContextTypeRegistry registry = new ContextTypeRegistry();
+
+			JavaContextType statementContextType = new JavaContextType();
+			statementContextType.setId(JavaContextType.ID_STATEMENTS);
+			statementContextType.setName(JavaContextType.ID_STATEMENTS);
+			statementContextType.initializeContextTypeResolvers();
+			// Todo: Some of the resolvers is defined in the XML of the jdt.ui, now we have to add them manually.
+			// See: https://github.com/eclipse/eclipse.jdt.ui/blob/cf6c42522ee5a5ea21a34fcfdecf3504d4750a04/org.eclipse.jdt.ui/plugin.xml#L5619-L5625
+			TemplateVariableResolver resolver = new VarResolver();
+			resolver.setType("var");
+			statementContextType.addResolver(resolver);
+
+			registry.addContextType(statementContextType);
+
+			fContextTypeRegistry = registry;
+		}
+		return fContextTypeRegistry;
+	}
+
+	/**
+	 * Returns the template store for the java editor templates.
+	 *
+	 * @return the template store for the java editor templates
+	 */
+	public JavaLanguageServerTemplateStore getTemplateStore() {
+		if (fTemplateStore == null) {
+			fTemplateStore = new JavaLanguageServerTemplateStore(getTemplateContextRegistry(), DefaultScope.INSTANCE.getNode(JavaManipulation.getPreferenceNodeId()), "");
+			try {
+				fTemplateStore.load();
+			} catch (IOException e) {
+				logException(e.getMessage(), e);
+			}
+		}
+
+		return fTemplateStore;
+	}
+
 	//Public for testing purposes
 	public static void setPreferencesManager(PreferenceManager preferenceManager) {
 		if (pluginInstance != null) {
 			pluginInstance.preferenceManager = preferenceManager;
 		}
+	}
+
+	public synchronized TypeFilter getTypeFilter() {
+		if (typeFilter == null) {
+			typeFilter = new TypeFilter();
+		}
+		return typeFilter;
+	}
+
+	public static synchronized ISourceDownloader getDefaultSourceDownloader() {
+		if (pluginInstance.sourceDownloader == null) {
+			pluginInstance.sourceDownloader = new MavenSourceDownloader();
+		}
+		return pluginInstance.sourceDownloader;
 	}
 }

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/proposals/AbstractMethodCorrectionProposal.java
  *
@@ -46,11 +48,12 @@ import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.manipulation.CodeGeneration;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.corext.codemanipulation.CodeGenerationSettings;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
+import org.eclipse.lsp4j.CodeActionKind;
 
 
 public abstract class AbstractMethodCorrectionProposal extends ASTRewriteCorrectionProposal {
@@ -60,7 +63,7 @@ public abstract class AbstractMethodCorrectionProposal extends ASTRewriteCorrect
 
 	public AbstractMethodCorrectionProposal(String label, ICompilationUnit targetCU, ASTNode invocationNode,
 			ITypeBinding binding, int relevance) {
-		super(label, targetCU, null, relevance);
+		super(label, CodeActionKind.QuickFix, targetCU, null, relevance);
 
 		Assert.isTrue(binding != null && Bindings.isDeclarationBinding(binding));
 
@@ -151,7 +154,7 @@ public abstract class AbstractMethodCorrectionProposal extends ASTRewriteCorrect
 			if (!isAbstractMethod && !isVoid) {
 				ReturnStatement returnStatement= ast.newReturnStatement();
 				returnStatement.setExpression(ASTNodeFactory.newDefaultExpression(ast, returnType, 0));
-				bodyStatement= ASTNodes.asFormattedString(returnStatement, 0, String.valueOf('\n'), getCompilationUnit().getJavaProject().getOptions(true));
+				bodyStatement= ASTNodes.asFormattedString(returnStatement, 0, String.valueOf('\n'), getCompilationUnit().getOptions(true));
 			}
 		}
 
@@ -169,7 +172,7 @@ public abstract class AbstractMethodCorrectionProposal extends ASTRewriteCorrect
 		}
 		decl.setBody(body);
 
-		CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(getCompilationUnit().getResource());
+		CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(getCompilationUnit());
 		if (settings.createComments && !fSenderBinding.isAnonymous()) {
 			String string = CodeGeneration.getMethodComment(getCompilationUnit(), fSenderBinding.getName(), decl, null,
 					String.valueOf('\n'));

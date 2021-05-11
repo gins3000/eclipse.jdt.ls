@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2012 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/proposals/RenameNodeCorrectionProposal.java
  *
@@ -21,6 +23,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.manipulation.CoreASTProvider;
 import org.eclipse.jdt.internal.corext.dom.LinkedNodeFinder;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
 
@@ -31,7 +34,7 @@ public class RenameNodeCorrectionProposal extends CUCorrectionProposal {
 	private int fLength;
 
 	public RenameNodeCorrectionProposal(String name, ICompilationUnit cu, int offset, int length, String newName, int relevance) {
-		super(name, cu, relevance);
+		super(name, CodeActionKind.QuickFix, cu, null, relevance);
 		fOffset= offset;
 		fLength= length;
 		fNewName= newName;

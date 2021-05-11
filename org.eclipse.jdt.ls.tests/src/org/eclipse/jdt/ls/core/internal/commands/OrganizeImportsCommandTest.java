@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017-2018 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -16,7 +18,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Hashtable;
 import java.util.List;
 
@@ -32,6 +36,7 @@ import org.eclipse.jdt.ls.core.internal.TextEditUtil;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
 import org.eclipse.jdt.ls.core.internal.correction.TestOptions;
 import org.eclipse.jdt.ls.core.internal.managers.AbstractProjectsManagerBasedTest;
+import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.Document;
 import org.eclipse.lsp4j.TextEdit;
@@ -235,6 +240,51 @@ public class OrganizeImportsCommandTest extends AbstractProjectsManagerBasedTest
 	}
 
 	@Test
+	public void testOrganizeImportsFilterTypes() throws CoreException, BadLocationException {
+		List<String> filteredTypes = new ArrayList<>();
+		filteredTypes.add("java.util.*");
+		PreferenceManager.getPrefs(null).setFilteredTypes(filteredTypes);
+		try {
+			IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+
+			StringBuilder buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        List list = new ArrayList();\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+
+			ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+
+			buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("import java.util.ArrayList;\n");
+			buf.append("import java.util.List;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        List list = new ArrayList();\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+
+			WorkspaceEdit rootEdit = new WorkspaceEdit();
+			command.organizeImportsInCompilationUnit(cu, rootEdit);
+			assertEquals(0, rootEdit.getChanges().size());
+			PreferenceManager.getPrefs(null).setFilteredTypes(Collections.emptyList());
+			command.organizeImportsInCompilationUnit(cu, rootEdit);
+			assertFalse(rootEdit.getChanges().isEmpty());
+			assertEquals(buf.toString(), getOrganizeImportResult(cu, rootEdit));
+		} finally {
+			PreferenceManager.getPrefs(null).setFilteredTypes(Collections.emptyList());
+		}
+	}
+
+	@Test
 	public void testOrganizeImportsInPackage() throws CoreException, BadLocationException {
 
 		IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
@@ -347,8 +397,91 @@ public class OrganizeImportsCommandTest extends AbstractProjectsManagerBasedTest
 		assertEquals(buf.toString(), getOrganizeImportResult(cu2, rootEdit));
 	}
 
+	@Test
+	public void testOrganizeImportsOnDemandThreshold() throws Exception {
+		int onDemandTreshold = preferenceManager.getPreferences().getImportOnDemandThreshold();
+		try {
+			preferenceManager.getPreferences().setImportOnDemandThreshold(2);
+			IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+			StringBuilder buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("import java.util.HashMap;\n");
+			buf.append("import java.util.ArrayList;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        ArrayList list = new ArrayList();\n");
+			buf.append("        HashMap<String, String> map = new HashMap<String, String>();\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+			ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+			buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("import java.util.*;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        ArrayList list = new ArrayList();\n");
+			buf.append("        HashMap<String, String> map = new HashMap<String, String>();\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+			WorkspaceEdit rootEdit = new WorkspaceEdit();
+			command.organizeImportsInCompilationUnit(cu, rootEdit);
+			assertEquals(buf.toString(), getOrganizeImportResult(cu, rootEdit));
+		} finally {
+			preferenceManager.getPreferences().setImportOnDemandThreshold(onDemandTreshold);
+		}
+	}
+
+	@Test
+	public void testOrganizeImportsStaticOnDemandThreshold() throws Exception {
+		int staticOnDemandTreshold = preferenceManager.getPreferences().getStaticImportOnDemandThreshold();
+		try {
+			preferenceManager.getPreferences().setStaticImportOnDemandThreshold(2);
+			IPackageFragment pack1 = fSourceFolder.createPackageFragment("test1", false, null);
+			StringBuilder buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("import static java.lang.Math.pow;\n");
+			buf.append("import static java.lang.Math.sqrt;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        double d1 = sqrt(4);\n");
+			buf.append("        double d2 = pow(2, 2);\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+			ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
+			buf = new StringBuilder();
+			buf.append("package test1;\n");
+			buf.append("\n");
+			buf.append("import static java.lang.Math.*;\n");
+			buf.append("\n");
+			buf.append("public class E {\n");
+			buf.append("\n");
+			buf.append("    public E() {\n");
+			buf.append("        double d1 = sqrt(4);\n");
+			buf.append("        double d2 = pow(2, 2);\n");
+			buf.append("    }\n");
+			buf.append("}\n");
+			WorkspaceEdit rootEdit = new WorkspaceEdit();
+			command.organizeImportsInCompilationUnit(cu, rootEdit);
+			assertEquals(buf.toString(), getOrganizeImportResult(cu, rootEdit));
+		} finally {
+			preferenceManager.getPreferences().setStaticImportOnDemandThreshold(staticOnDemandTreshold);
+		}
+	}
+
 	private String getOrganizeImportResult(ICompilationUnit cu, WorkspaceEdit we) throws BadLocationException, CoreException {
 		List<TextEdit> change = we.getChanges().get(JDTUtils.toURI(cu));
+		if (change == null) {
+			return cu.getSource();
+		}
 		Document doc = new Document();
 		doc.set(cu.getSource());
 

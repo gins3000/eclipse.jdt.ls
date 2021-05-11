@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -20,6 +22,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.WorkingCopyOwner;
 import org.eclipse.jdt.core.manipulation.CoreASTProvider;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection;
+import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.LanguageServerWorkingCopyOwner;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
 import org.eclipse.jdt.ls.core.internal.managers.AbstractProjectsManagerBasedTest;
@@ -50,7 +53,8 @@ public abstract class AbstractCompilationUnitBasedTest extends AbstractProjectsM
 
 	protected ICompilationUnit getWorkingCopy(String path, String source) throws JavaModelException {
 		ICompilationUnit workingCopy = getCompilationUnit(path);
-		workingCopy.getWorkingCopy(wcOwner, monitor);
+		// workingCopy.getWorkingCopy(wcOwner, monitor);
+		workingCopy.becomeWorkingCopy(monitor);
 		workingCopy.getBuffer().setContents(source);
 		workingCopy.makeConsistent(monitor);
 		return workingCopy;
@@ -73,5 +77,14 @@ public abstract class AbstractCompilationUnitBasedTest extends AbstractProjectsM
 	@After
 	public void shutdown() throws Exception {
 		CoreASTProvider.getInstance().disposeAST();
+		ICompilationUnit[] workingCopies = JavaCore.getWorkingCopies(wcOwner);
+		for (ICompilationUnit workingCopy : workingCopies) {
+			workingCopy.discardWorkingCopy();
+		}
+		workingCopies = JavaCore.getWorkingCopies(null);
+		for (ICompilationUnit workingCopy : workingCopies) {
+			workingCopy.discardWorkingCopy();
+		}
+		JavaLanguageServerPlugin.getInstance().setProtocol(null);
 	}
 }

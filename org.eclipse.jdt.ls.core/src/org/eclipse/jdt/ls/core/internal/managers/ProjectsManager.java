@@ -1,9 +1,11 @@
 /*******************************************************************************
- * Copyright (c) 2016-2017 Red Hat Inc. and others.
+ * Copyright (c) 2016-2019 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -11,35 +13,33 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.managers;
 
-import static java.util.Arrays.asList;
-import static org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin.logInfo;
+import static org.eclipse.jdt.ls.core.internal.JVMConfigurator.configureJVMSettings;
 
 import java.io.File;
-import java.net.MalformedURLException;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.StringUtils;
+import org.eclipse.core.resources.FileInfoMatcherDescription;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceFilterDescription;
 import org.eclipse.core.resources.ISaveContext;
 import org.eclipse.core.resources.ISaveParticipant;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceDescription;
 import org.eclipse.core.resources.IWorkspaceRoot;
-import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.resources.WorkspaceJob;
 import org.eclipse.core.runtime.CoreException;
@@ -48,7 +48,6 @@ import org.eclipse.core.runtime.IExtensionPoint;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
@@ -58,91 +57,112 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.JavaCore;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.launching.IVMInstall;
 import org.eclipse.jdt.launching.JavaRuntime;
 import org.eclipse.jdt.launching.environments.IExecutionEnvironment;
 import org.eclipse.jdt.launching.environments.IExecutionEnvironmentsManager;
-import org.eclipse.jdt.ls.core.internal.ActionableNotification;
-import org.eclipse.jdt.ls.core.internal.DidChangeWatchedFilesRegistrationOptions;
-import org.eclipse.jdt.ls.core.internal.FileSystemWatcher;
+import org.eclipse.jdt.ls.core.internal.EventNotification;
+import org.eclipse.jdt.ls.core.internal.EventType;
 import org.eclipse.jdt.ls.core.internal.IConstants;
 import org.eclipse.jdt.ls.core.internal.IProjectImporter;
-import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection.JavaLanguageClient;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
-import org.eclipse.jdt.ls.core.internal.JobHelpers;
 import org.eclipse.jdt.ls.core.internal.ProjectUtils;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.ServiceStatus;
 import org.eclipse.jdt.ls.core.internal.StatusFactory;
+import org.eclipse.jdt.ls.core.internal.handlers.BaseInitHandler;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
-import org.eclipse.jdt.ls.core.internal.preferences.Preferences;
-import org.eclipse.jdt.ls.core.internal.preferences.Preferences.FeatureStatus;
-import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.MessageType;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
 
-public class ProjectsManager implements ISaveParticipant {
+public abstract class ProjectsManager implements ISaveParticipant, IProjectsManager {
 
 	public static final String DEFAULT_PROJECT_NAME = "jdt.ls-java-project";
-	private static final Set<String> watchers = new HashSet<>();
+	public static final String PROJECTS_IMPORTED = "__PROJECTS_IMPORTED__";
+	private static final String CORE_RESOURCES_MATCHER_ID = "org.eclipse.core.resources.regexFilterMatcher";
+	public static final String CREATED_BY_JAVA_LANGUAGE_SERVER = "__CREATED_BY_JAVA_LANGUAGE_SERVER__";
+	private static final int JDTLS_FILTER_TYPE = IResourceFilterDescription.EXCLUDE_ALL | IResourceFilterDescription.INHERITABLE | IResourceFilterDescription.FILES | IResourceFilterDescription.FOLDERS;
+
 	private PreferenceManager preferenceManager;
-	private JavaLanguageClient client;
+	protected JavaLanguageClient client;
 
 	public enum CHANGE_TYPE {
 		CREATED, CHANGED, DELETED
-	};
-
-	private Job registerWatcherJob = new Job("Register Watchers") {
-
-		@Override
-		protected IStatus run(IProgressMonitor monitor) {
-			JobHelpers.waitForJobsToComplete();
-			registerWatchers();
-			return Status.OK_STATUS;
-		}
-
 	};
 
 	public ProjectsManager(PreferenceManager preferenceManager) {
 		this.preferenceManager = preferenceManager;
 	}
 
+	@Override
 	public void initializeProjects(final Collection<IPath> rootPaths, IProgressMonitor monitor) throws CoreException, OperationCanceledException {
-		// Run as a Java runnable to trigger any build while importing
-		JavaCore.run(new IWorkspaceRunnable() {
-			@Override
-			public void run(IProgressMonitor monitor) throws CoreException {
-				SubMonitor subMonitor = SubMonitor.convert(monitor, 100);
-				deleteInvalidProjects(rootPaths, subMonitor.split(10));
-				GradleBuildSupport.cleanGradleModels(subMonitor.split(10));
-				createJavaProject(getDefaultProject(), subMonitor.split(10));
-				cleanupResources(getDefaultProject());
-				importProjects(rootPaths, subMonitor.split(70));
-				subMonitor.done();
-			}
-		}, monitor);
+		SubMonitor subMonitor = SubMonitor.convert(monitor, 100);
+		cleanInvalidProjects(rootPaths, subMonitor.split(20));
+		createJavaProject(getDefaultProject(), subMonitor.split(10));
+		cleanupResources(getDefaultProject());
+		importProjects(rootPaths, subMonitor.split(70));
+		subMonitor.done();
 	}
 
-	private void importProjects(Collection<IPath> rootPaths, IProgressMonitor monitor) throws CoreException {
+	protected void importProjects(Collection<IPath> rootPaths, IProgressMonitor monitor) throws CoreException, OperationCanceledException {
 		SubMonitor subMonitor = SubMonitor.convert(monitor, rootPaths.size() * 100);
 		for (IPath rootPath : rootPaths) {
 			File rootFolder = rootPath.toFile();
-			IProjectImporter importer = getImporter(rootFolder, subMonitor.split(30));
-			if (importer != null) {
-				importer.importToWorkspace(subMonitor.split(70));
+			for (IProjectImporter importer : importers()) {
+				importer.initialize(rootFolder);
+				if (importer.applies(subMonitor.split(1))) {
+					importer.importToWorkspace(subMonitor.split(70));
+					if (importer.isResolved(rootFolder)) {
+						break;
+					}
+				}
 			}
 		}
 	}
 
-	public Job updateWorkspaceFolders(Collection<IPath> addedRootPaths, Collection<IPath> removedRootPaths) {
-		JavaLanguageServerPlugin.sendStatus(ServiceStatus.Message, "Updating workspace folders: Adding " + addedRootPaths.size() + " folder(s), removing " + removedRootPaths.size() + " folders.");
-		WorkspaceJob job = new WorkspaceJob("Updating workspace folders") {
+	public void importProjects(IProgressMonitor monitor) {
+		WorkspaceJob job = new WorkspaceJob("Importing projects in workspace...") {
 
 			@Override
+			public IStatus runInWorkspace(IProgressMonitor monitor) throws CoreException {
+				try {
+					importProjects(preferenceManager.getPreferences().getRootPaths(), monitor);
+				} catch (OperationCanceledException e) {
+					return Status.CANCEL_STATUS;
+				} catch (CoreException e) {
+					return new Status(Status.ERROR, IConstants.PLUGIN_ID, "Importing projects failed.", e);
+				}
+				List<URI> projectUris = Arrays.stream(getWorkspaceRoot().getProjects())
+					.map(project -> ProjectUtils.getProjectRealFolder(project).toFile().toURI())
+					.collect(Collectors.toList());
+				EventNotification notification = new EventNotification().withType(EventType.ProjectsImported).withData(projectUris);
+				client.sendEventNotification(notification);
+				return Status.OK_STATUS;
+			}
+		};
+		job.setRule(getWorkspaceRoot());
+		job.schedule();
+	}
+
+	@Override
+	public Job updateWorkspaceFolders(Collection<IPath> addedRootPaths, Collection<IPath> removedRootPaths) {
+		JavaLanguageServerPlugin.sendStatus(ServiceStatus.Message, "Updating workspace folders: Adding " + addedRootPaths.size() + " folder(s), removing " + removedRootPaths.size() + " folders.");
+		Job[] removedJobs = Job.getJobManager().find(removedRootPaths);
+		for (Job removedJob : removedJobs) {
+			if (removedJob.belongsTo(IConstants.UPDATE_WORKSPACE_FOLDERS_FAMILY) || removedJob.belongsTo(BaseInitHandler.JAVA_LS_INITIALIZATION_JOBS)) {
+				removedJob.cancel();
+			}
+		}
+		WorkspaceJob job = new WorkspaceJob("Updating workspace folders") {
+
+			@SuppressWarnings("unchecked")
+			@Override
 			public boolean belongsTo(Object family) {
-				return IConstants.UPDATE_WORKSPACE_FOLDERS_FAMILY.equals(family) || IConstants.JOBS_FAMILY.equals(family);
+				Collection<IPath> addedRootPathsSet = addedRootPaths.stream().collect(Collectors.toSet());
+				boolean equalToRootPaths = false;
+				if (family instanceof Collection<?>) {
+					equalToRootPaths = addedRootPathsSet.equals(((Collection<IPath>) family).stream().collect(Collectors.toSet()));
+				}
+				return IConstants.UPDATE_WORKSPACE_FOLDERS_FAMILY.equals(family) || IConstants.JOBS_FAMILY.equals(family) || equalToRootPaths;
 			}
 
 			@Override
@@ -162,7 +182,7 @@ public class ProjectsManager implements ISaveParticipant {
 						}
 					}
 					importProjects(addedRootPaths, subMonitor.split(addedRootPaths.size()));
-					registerWatcherJob.schedule();
+					registerWatchers(true);
 					long elapsed = System.currentTimeMillis() - start;
 
 					JavaLanguageServerPlugin.logInfo("Updated workspace folders in " + elapsed + " ms: Added " + addedRootPaths.size() + " folder(s), removed" + removedRootPaths.size() + " folders.");
@@ -173,7 +193,8 @@ public class ProjectsManager implements ISaveParticipant {
 					JavaLanguageServerPlugin.logError(msg);
 					status = StatusFactory.newErrorStatus(msg, e);
 				}
-				GradleBuildSupport.cleanGradleModels(monitor);
+
+				cleanInvalidProjects(preferenceManager.getPreferences().getRootPaths(), monitor);
 				return status;
 			}
 		};
@@ -217,126 +238,25 @@ public class ProjectsManager implements ISaveParticipant {
 		});
 	}
 
-	private void deleteInvalidProjects(Collection<IPath> rootPaths, IProgressMonitor monitor) {
-		for (IProject project : getWorkspaceRoot().getProjects()) {
-			if (project.exists() && (ResourceUtils.isContainedIn(project.getLocation(), rootPaths) || ProjectUtils.isGradleProject(project))) {
-				try {
-					project.getDescription();
-				} catch (CoreException e) {
-					try {
-						project.delete(true, monitor);
-					} catch (CoreException e1) {
-						JavaLanguageServerPlugin.logException(e1.getMessage(), e1);
-					}
-				}
-			} else {
-				try {
-					project.delete(false, true, monitor);
-				} catch (CoreException e1) {
-					JavaLanguageServerPlugin.logException(e1.getMessage(), e1);
-				}
-			}
-		}
-	}
-
 	private static IWorkspaceRoot getWorkspaceRoot() {
 		return ResourcesPlugin.getWorkspace().getRoot();
 	}
 
-	public void fileChanged(String uriString, CHANGE_TYPE changeType) {
-		if (uriString == null) {
-			return;
-		}
-		IResource resource = JDTUtils.isFolder(uriString) ? JDTUtils.findFolder(uriString) : JDTUtils.findFile(uriString);
-		if (resource == null) {
-			return;
-		}
-		String formatterUrl = preferenceManager.getPreferences().getFormatterUrl();
-		if (formatterUrl != null) {
-			try {
-				URL url = getUrl(formatterUrl);
-				URI formatterUri = url.toURI();
-				URI uri = JDTUtils.toURI(uriString);
-				if (uri != null && uri.equals(formatterUri) && JavaLanguageServerPlugin.getInstance().getProtocol() != null) {
-					if (changeType == CHANGE_TYPE.DELETED || changeType == CHANGE_TYPE.CREATED) {
-						registerWatchers();
-					}
-					FormatterManager.configureFormatter(preferenceManager, this);
-				}
-			} catch (URISyntaxException e) {
-				// ignore
-			}
-		}
-		try {
-			if (changeType == CHANGE_TYPE.DELETED) {
-				resource = resource.getParent();
-			}
-			if (resource != null) {
-				resource.refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
-			}
-			if (isBuildFile(resource)) {
-				FeatureStatus status = preferenceManager.getPreferences().getUpdateBuildConfigurationStatus();
-				switch (status) {
-					case automatic:
-						// do not force the build, because it's not started by user and should be done only if build file has changed
-						updateProject(resource.getProject(), false);
-						break;
-					case disabled:
-						break;
-					default:
-						if (client != null) {
-							String cmd = "java.projectConfiguration.status";
-							TextDocumentIdentifier uri = new TextDocumentIdentifier(uriString);
-							ActionableNotification updateProjectConfigurationNotification = new ActionableNotification().withSeverity(MessageType.Info)
-									.withMessage("A build file was modified. Do you want to synchronize the Java classpath/configuration?").withCommands(asList(new Command("Never", cmd, asList(uri, FeatureStatus.disabled)),
-											new Command("Now", cmd, asList(uri, FeatureStatus.interactive)), new Command("Always", cmd, asList(uri, FeatureStatus.automatic))));
-							client.sendActionableNotification(updateProjectConfigurationNotification);
-						}
-				}
-			}
-		} catch (CoreException e) {
-			JavaLanguageServerPlugin.logException("Problem refreshing workspace", e);
-		}
-	}
-
-	public URL getUrl(String formatterUrl) {
-		URL url = null;
-		try {
-			url = new URL(ResourceUtils.toClientUri(formatterUrl));
-		} catch (MalformedURLException e1) {
-			File file = findFile(formatterUrl);
-			if (file != null && file.isFile()) {
-				try {
-					url = file.toURI().toURL();
-				} catch (MalformedURLException e) {
-					JavaLanguageServerPlugin.logInfo("Invalid formatter:" + formatterUrl);
-				}
-			}
-		}
-		return url;
-	}
-
+	@Override
 	public boolean isBuildFile(IResource resource) {
 		return buildSupports().filter(bs -> bs.isBuildFile(resource)).findAny().isPresent();
 	}
 
-	private IProjectImporter getImporter(File rootFolder, IProgressMonitor monitor) throws OperationCanceledException, CoreException {
-		Collection<IProjectImporter> importers = importers();
-		SubMonitor subMonitor = SubMonitor.convert(monitor, importers.size());
-		for (IProjectImporter importer : importers) {
-			importer.initialize(rootFolder);
-			if (importer.applies(subMonitor.split(1))) {
-				return importer;
-			}
-		}
-		return null;
+	@Override
+	public boolean isBuildLikeFileName(String fileName) {
+		return buildSupports().filter(bs -> bs.isBuildLikeFileName(fileName)).findAny().isPresent();
 	}
 
-	public IProject getDefaultProject() {
+	public static IProject getDefaultProject() {
 		return getWorkspaceRoot().getProject(DEFAULT_PROJECT_NAME);
 	}
 
-	private Collection<IProjectImporter> importers() {
+	public static Collection<IProjectImporter> importers() {
 		Map<Integer, IProjectImporter> importers = new TreeMap<>();
 		IExtensionPoint extensionPoint = Platform.getExtensionRegistry().getExtensionPoint(IConstants.PLUGIN_ID, "importers");
 		IConfigurationElement[] configs = extensionPoint.getConfigurationElements();
@@ -351,50 +271,69 @@ public class ProjectsManager implements ISaveParticipant {
 		return importers.values();
 	}
 
-	public IProject createJavaProject(IProject project, IProgressMonitor monitor) throws CoreException, OperationCanceledException {
+	public static IProject createJavaProject(IProject project, IProgressMonitor monitor) throws CoreException, OperationCanceledException {
+		return createJavaProject(project, null, "src", "bin", monitor);
+	}
+
+	public static IProject createJavaProject(IProject project, IPath projectLocation, String src, String bin, IProgressMonitor monitor) throws CoreException, OperationCanceledException {
 		if (project.exists()) {
 			return project;
 		}
-		JavaLanguageServerPlugin.logInfo("Creating the default Java project");
+		JavaLanguageServerPlugin.logInfo("Creating the Java project " + project.getName());
 		//Create project
-		project.create(monitor);
+		IProjectDescription description = ResourcesPlugin.getWorkspace().newProjectDescription(project.getName());
+		if (projectLocation != null) {
+			description.setLocation(projectLocation);
+		}
+		project.create(description, monitor);
 		project.open(monitor);
 
 		//Turn into Java project
-		IProjectDescription description = project.getDescription();
+		description = project.getDescription();
 		description.setNatureIds(new String[] { JavaCore.NATURE_ID });
 		project.setDescription(description, monitor);
+
 		IJavaProject javaProject = JavaCore.create(project);
+		configureJVMSettings(javaProject);
 
 		//Add build output folder
-		IFolder output = project.getFolder("bin");
-		if (!output.exists()) {
-			output.create(true, true, monitor);
+		if (StringUtils.isNotBlank(bin)) {
+			IFolder output = project.getFolder(bin);
+			if (!output.exists()) {
+				output.create(true, true, monitor);
+			}
+			javaProject.setOutputLocation(output.getFullPath(), monitor);
 		}
-		javaProject.setOutputLocation(output.getFullPath(), monitor);
 
+		List<IClasspathEntry> classpaths = new ArrayList<>();
 		//Add source folder
-		IFolder source = project.getFolder("src");
-		if (!source.exists()) {
-			source.create(true, true, monitor);
+		if (StringUtils.isNotBlank(src)) {
+			IFolder source = project.getFolder(src);
+			if (!source.exists()) {
+				source.create(true, true, monitor);
+			}
+			IPackageFragmentRoot root = javaProject.getPackageFragmentRoot(source);
+			IClasspathEntry srcClasspath = JavaCore.newSourceEntry(root.getPath());
+			classpaths.add(srcClasspath);
 		}
-		IPackageFragmentRoot root = javaProject.getPackageFragmentRoot(source);
-		IClasspathEntry src = JavaCore.newSourceEntry(root.getPath());
 
 		//Find default JVM
 		IClasspathEntry jre = JavaRuntime.getDefaultJREContainerEntry();
+		classpaths.add(jre);
 
 		//Add JVM to project class path
-		javaProject.setRawClasspath(new IClasspathEntry[] { jre, src }, monitor);
+		javaProject.setRawClasspath(classpaths.toArray(new IClasspathEntry[0]), monitor);
 
-		JavaLanguageServerPlugin.logInfo("Finished creating the default Java project");
+		JavaLanguageServerPlugin.logInfo("Finished creating the Java project " + project.getName());
 		return project;
 	}
 
+	@Override
 	public Job updateProject(IProject project, boolean force) {
-		if (project == null || (!ProjectUtils.isMavenProject(project) && !ProjectUtils.isGradleProject(project))) {
+		if (project == null || ProjectUtils.isInternalBuildSupport(BuildSupportManager.find(project).orElse(null))) {
 			return null;
 		}
+
 		JavaLanguageServerPlugin.sendStatus(ServiceStatus.Message, "Updating " + project.getName() + " configuration");
 		WorkspaceJob job = new WorkspaceJob("Update project " + project.getName()) {
 
@@ -414,7 +353,7 @@ public class ProjectsManager implements ISaveParticipant {
 					Optional<IBuildSupport> buildSupport = getBuildSupport(project);
 					if (buildSupport.isPresent()) {
 						buildSupport.get().update(project, force, progress.split(95));
-						registerWatcherJob.schedule();
+						registerWatchers(true);
 					}
 					long elapsed = System.currentTimeMillis() - start;
 					JavaLanguageServerPlugin.logInfo("Updated " + projectName + " in " + elapsed + " ms");
@@ -430,16 +369,21 @@ public class ProjectsManager implements ISaveParticipant {
 		return job;
 	}
 
-	private Optional<IBuildSupport> getBuildSupport(IProject project) {
+	@Override
+	public Optional<IBuildSupport> getBuildSupport(IProject project) {
 		return buildSupports().filter(bs -> bs.applies(project)).findFirst();
 	}
 
 	private Stream<IBuildSupport> buildSupports() {
-		return Stream.of(new GradleBuildSupport(), new MavenBuildSupport());
+		return Stream.of(new EclipseBuildSupport());
 	}
 
 	public void setConnection(JavaLanguageClient client) {
 		this.client = client;
+	}
+
+	public JavaLanguageClient getConnection() {
+		return this.client;
 	}
 
 	private String getWorkspaceInfo() {
@@ -502,9 +446,6 @@ public class ProjectsManager implements ISaveParticipant {
 	 */
 	@Override
 	public void prepareToSave(ISaveContext context) throws CoreException {
-		if (context.getKind() == ISaveContext.FULL_SAVE) {
-			GradleBuildSupport.saveModels();
-		}
 	}
 
 	/* (non-Javadoc)
@@ -521,7 +462,7 @@ public class ProjectsManager implements ISaveParticipant {
 	public void saving(ISaveContext context) throws CoreException {
 	}
 
-	public boolean setAutoBuilding(boolean enable) throws CoreException {
+	public static boolean setAutoBuilding(boolean enable) throws CoreException {
 		IWorkspace workspace = ResourcesPlugin.getWorkspace();
 		IWorkspaceDescription description = workspace.getDescription();
 		boolean changed = description.isAutoBuilding() != enable;
@@ -532,82 +473,38 @@ public class ProjectsManager implements ISaveParticipant {
 		return changed;
 	}
 
-	public List<FileSystemWatcher> registerWatchers() {
-		logInfo(">> registerFeature 'workspace/didChangeWatchedFiles'");
-		if (preferenceManager.getClientPreferences().isWorkspaceChangeWatchedFilesDynamicRegistered()) {
-			Set<String> sources = new HashSet<>();
-			try {
-				IProject[] projects = ResourcesPlugin.getWorkspace().getRoot().getProjects();
-				for (IProject project : projects) {
-					if (DEFAULT_PROJECT_NAME.equals(project.getName())) {
-						continue;
-					}
-					IJavaProject javaProject = JavaCore.create(project);
-					if (javaProject != null && javaProject.exists()) {
-						IClasspathEntry[] classpath = javaProject.getRawClasspath();
-						for (IClasspathEntry entry : classpath) {
-							if (entry.getEntryKind() == IClasspathEntry.CPE_SOURCE) {
-								IPath path = entry.getPath();
-								if (path != null) {
-									IFolder folder = ResourcesPlugin.getWorkspace().getRoot().getFolder(path);
-									if (folder.exists() && !folder.isDerived()) {
-										IPath location = folder.getLocation();
-										if (location != null) {
-											sources.add(location.toString() + "/**");
-										}
-									}
-
-								}
-							}
-						}
-					}
-				}
-			} catch (JavaModelException e) {
-				JavaLanguageServerPlugin.logException(e.getMessage(), e);
-			}
-			List<FileSystemWatcher> fileWatchers = new ArrayList<>();
-			String formatterUrl = preferenceManager.getPreferences().getFormatterUrl();
-			if (formatterUrl != null) {
-				File file = new File(formatterUrl);
-				if (!file.isFile()) {
-					file = findFile(formatterUrl);
-				}
-				if (file != null && file.isFile()) {
-					sources.add(file.getAbsolutePath());
-				}
-			}
-			for (String pattern : sources) {
-				FileSystemWatcher watcher = new FileSystemWatcher(pattern, FileSystemWatcher.WATCH_KIND_DEFAULT);
-				fileWatchers.add(watcher);
-			}
-			if (!sources.equals(watchers)) {
-				logInfo(">> registerFeature 'workspace/didChangeWatchedFiles'");
-				DidChangeWatchedFilesRegistrationOptions didChangeWatchedFilesRegistrationOptions = new DidChangeWatchedFilesRegistrationOptions(fileWatchers);
-				JavaLanguageServerPlugin.getInstance().unregisterCapability(Preferences.WORKSPACE_WATCHED_FILES_ID, Preferences.WORKSPACE_WATCHED_FILES);
-				JavaLanguageServerPlugin.getInstance().registerCapability(Preferences.WORKSPACE_WATCHED_FILES_ID, Preferences.WORKSPACE_WATCHED_FILES, didChangeWatchedFilesRegistrationOptions);
-				watchers.clear();
-				watchers.addAll(sources);
-			}
-			return fileWatchers;
+	public void configureFilters(IProgressMonitor monitor) throws CoreException {
+		List<String> resourceFilters = preferenceManager.getPreferences().getResourceFilters();
+		if (resourceFilters != null && !resourceFilters.isEmpty()) {
+			resourceFilters = new ArrayList<>(resourceFilters);
+			resourceFilters.add(CREATED_BY_JAVA_LANGUAGE_SERVER);
 		}
-		return null;
-	}
-
-	public File findFile(String formatterUrl) {
-		File file = new File(formatterUrl);
-		if (file.exists()) {
-			return file;
-		}
-		Collection<IPath> rootPaths = preferenceManager.getPreferences().getRootPaths();
-		if (rootPaths != null) {
-			for (IPath rootPath : rootPaths) {
-				File f = new File(rootPath.toOSString(), formatterUrl);
-				if (f.isFile()) {
-					return f;
+		String resourceFilter = resourceFilters == null ? null : String.join("|", resourceFilters);
+		for (IProject project : ProjectUtils.getAllProjects()) {
+			if (project.equals(getDefaultProject())) {
+				continue;
+			}
+			List<IResourceFilterDescription> filters = Stream.of(project.getFilters())
+					.filter(f -> {
+						FileInfoMatcherDescription matcher = f.getFileInfoMatcherDescription();
+								return CORE_RESOURCES_MATCHER_ID.equals(matcher.getId()) && (matcher.getArguments() instanceof String) && ((String) matcher.getArguments()).contains(CREATED_BY_JAVA_LANGUAGE_SERVER);
+					})
+					.collect(Collectors.toList());
+			boolean filterExists = false;
+			for (IResourceFilterDescription filter : filters) {
+				if (resourceFilter == null || resourceFilter.isEmpty()) {
+					filter.delete(IResource.BACKGROUND_REFRESH, monitor);
+				} else if (!Objects.equals(resourceFilter, filter.getFileInfoMatcherDescription().getArguments())) {
+					filter.delete(IResource.BACKGROUND_REFRESH, monitor);
+				} else {
+					filterExists = true;
+					break;
 				}
+			}
+			if (!filterExists && resourceFilter != null && !resourceFilter.isEmpty()) {
+				project.createFilter(JDTLS_FILTER_TYPE, new FileInfoMatcherDescription(CORE_RESOURCES_MATCHER_ID, resourceFilter), IResource.BACKGROUND_REFRESH, monitor);
 			}
 		}
-		return null;
 	}
 
 }

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2014 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.RefactoringCoreMessages
  *
@@ -692,6 +694,20 @@ public final class RefactoringCoreMessages extends NLS {
 	public static String ExtractTempRefactoring_resource_in_try_with_resources;
 
 	public static String ExtractTempRefactoring_select_expression;
+
+	public static String ExtractFieldRefactoring_name;
+
+	public static String ExtractFieldRefactoring_interface_methods;
+
+	public static String ExtractFieldRefactoring_cannot_extract;
+
+	public static String ExtractFieldRefactoring_uses_type_declared_locally;
+
+	public static String ExtractFieldRefactoring_creating_change;
+
+	public static String ExtractFieldRefactoring_initialize_field;
+
+	public static String ExtractFieldRefactoring_replace;
 
 	public static String FlowAnalyzer_execution_flow;
 

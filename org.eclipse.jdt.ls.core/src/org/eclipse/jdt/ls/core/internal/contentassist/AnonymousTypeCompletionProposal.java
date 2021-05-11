@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Code copied from org.eclipse.jdt.internal.ui.text.java.AnonymousTypeCompletionProposal
  *
@@ -47,10 +49,10 @@ import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.formatter.CodeFormatter;
 import org.eclipse.jdt.internal.corext.codemanipulation.CodeGenerationSettings;
+import org.eclipse.jdt.internal.corext.codemanipulation.StubUtility2Core;
 import org.eclipse.jdt.internal.corext.dom.IASTSharedValues;
 import org.eclipse.jdt.internal.corext.util.CodeFormatterUtil;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.StubUtility2;
 import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.Document;
@@ -89,17 +91,16 @@ public class AnonymousTypeCompletionProposal {
 	 * @see JavaTypeCompletionProposal#updateReplacementString(IDocument,char,int,ImportRewrite)
 	 */
 	public String updateReplacementString(IDocument document, int offset, ImportRewrite impRewrite) throws CoreException, BadLocationException {
-		String newBody = createNewBody(impRewrite);
-		if (newBody == null) {
-			return null;
-		}
-		StringBuffer buf = new StringBuffer("new A()"); //$NON-NLS-1$
+		// Construct empty body for performance concern
+		// See https://github.com/microsoft/language-server-protocol/issues/1032#issuecomment-648748013
+		String newBody = fSnippetSupport ? "{\n\t${0}\n}" : "{\n\n}";
+
+		StringBuilder buf = new StringBuilder("new A()"); //$NON-NLS-1$
 		buf.append(newBody);
 		// use the code formatter
 		String lineDelim = TextUtilities.getDefaultLineDelimiter(document);
-		final IJavaProject project = fCompilationUnit.getJavaProject();
 		IRegion lineInfo = document.getLineInformationOfOffset(fReplacementOffset);
-		Map<String, String> options = project != null ? project.getOptions(true) : JavaCore.getOptions();
+		Map<String, String> options = fCompilationUnit.getOptions(true);
 		String replacementString = CodeFormatterUtil.format(CodeFormatter.K_EXPRESSION, buf.toString(), 0, lineDelim, options);
 		int lineEndOffset = lineInfo.getOffset() + lineInfo.getLength();
 		int p = offset;
@@ -160,7 +161,7 @@ public class AnonymousTypeCompletionProposal {
 			if (dummyTypeBinding == null) {
 				return null;
 			}
-			IMethodBinding[] bindings = StubUtility2.getOverridableMethods(astRoot.getAST(), dummyTypeBinding, true);
+			IMethodBinding[] bindings = StubUtility2Core.getOverridableMethods(astRoot.getAST(), dummyTypeBinding, true);
 			if (fSuperType.isInterface()) {
 				ITypeBinding[] dummySuperInterfaces = dummyTypeBinding.getInterfaces();
 				if (dummySuperInterfaces.length == 0 || dummySuperInterfaces.length == 1 && dummySuperInterfaces[0].isRawType()) {
@@ -172,7 +173,7 @@ public class AnonymousTypeCompletionProposal {
 					bindings = new IMethodBinding[0];
 				}
 			}
-			CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(fJavaProject.getProject());
+			CodeGenerationSettings settings = PreferenceManager.getCodeGenerationSettings(fCompilationUnit);
 			IMethodBinding[] methodsToOverride = null;
 			settings.createComments = false;
 			List<IMethodBinding> result = new ArrayList<>();
@@ -183,9 +184,10 @@ public class AnonymousTypeCompletionProposal {
 				}
 			}
 			methodsToOverride = result.toArray(new IMethodBinding[result.size()]);
+			ASTNode focusNode = null;
 			IBinding contextBinding = null; // used to find @NonNullByDefault effective at that current context
 			if (fCompilationUnit.getJavaProject().getOption(JavaCore.COMPILER_ANNOTATION_NULL_ANALYSIS, true).equals(JavaCore.ENABLED)) {
-				ASTNode focusNode = NodeFinder.perform(astRoot, fReplacementOffset + dummyClassContent.length(), 0);
+				focusNode = NodeFinder.perform(astRoot, fReplacementOffset + dummyClassContent.length(), 0);
 				contextBinding = getEnclosingDeclaration(focusNode);
 			}
 			ASTRewrite rewrite = ASTRewrite.create(astRoot.getAST());
@@ -194,7 +196,7 @@ public class AnonymousTypeCompletionProposal {
 			for (int i = 0; i < methodsToOverride.length; i++) {
 				boolean snippetSupport = i == methodsToOverride.length-1 ? fSnippetSupport : false;
 				IMethodBinding curr = methodsToOverride[i];
-				MethodDeclaration stub = StubUtility2.createImplementationStub(workingCopy, rewrite, importRewrite, null, curr, dummyTypeBinding, settings, dummyTypeBinding.isInterface(), contextBinding, snippetSupport);
+				MethodDeclaration stub = StubUtility2Core.createImplementationStubCore(workingCopy, rewrite, importRewrite, null, curr, dummyTypeBinding, settings, dummyTypeBinding.isInterface(), focusNode, snippetSupport);
 				rewriter.insertFirst(stub, null);
 			}
 			IDocument document = new Document(workingCopy.getSource());

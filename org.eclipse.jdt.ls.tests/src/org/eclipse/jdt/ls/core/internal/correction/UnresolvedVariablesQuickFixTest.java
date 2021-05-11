@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui.tests/ui/org/eclipse/jdt/ui/tests/quickfix/UnresolvedVariablesQuickFixTest.java
  *
@@ -2437,8 +2439,8 @@ public class UnresolvedVariablesQuickFixTest extends AbstractQuickFixTest {
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
-		buf.append("public class Message {\n");
-		buf.append("    public Object z;\n");
+		buf.append("public class Message {\n\n");
+		buf.append("    public static Object z;\n");
 		buf.append("}\n");
 		Expected e1 = new Expected("Create field 'z' in type 'Message'", buf.toString());
 

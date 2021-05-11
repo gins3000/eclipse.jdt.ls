@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2009, 2018 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -24,8 +26,6 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubProgressMonitor;
-import org.eclipse.jdt.core.IClassFile;
-import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
@@ -84,16 +84,23 @@ public class ImplementationCollector<T> {
 	private final IRegion region;
 	private final IJavaElement javaElement;
 	private ResultMapper<T> mapper;
+	private ITypeRoot typeRoot;
 
 	/**
-	 * @param region the region of the link
-	 * @param javaElement the element (type or method) to open
+	 * @param typeRoot
+	 *            the root where the find implementation is triggered
+	 * @param region
+	 *            the region of the selection
+	 * @param javaElement
+	 *            the element (type or method) to open
 	 */
-	public ImplementationCollector(IRegion region, IJavaElement javaElement, ResultMapper<T> mapper) {
+	public ImplementationCollector(ITypeRoot typeRoot, IRegion region, IJavaElement javaElement, ResultMapper<T> mapper) {
+		Assert.isNotNull(typeRoot);
 		Assert.isNotNull(region);
 		Assert.isNotNull(javaElement);
 		Assert.isNotNull(mapper);
 		Assert.isTrue(javaElement instanceof IType || javaElement instanceof IMethod);
+		this.typeRoot = typeRoot;
 		this.region = region;
 		this.javaElement = javaElement;
 		this.mapper = mapper;
@@ -101,7 +108,7 @@ public class ImplementationCollector<T> {
 
 	/**
 	 * Finds the implementations for the method or type.
-	 * 
+	 *
 	 * @return an unmodifiable {@link List} of T, never <code>null</code>.
 	 */
 	public List<T> findImplementations(IProgressMonitor monitor) throws CoreException {
@@ -144,10 +151,6 @@ public class ImplementationCollector<T> {
 		} catch (JavaModelException e) {
 			JavaLanguageServerPlugin.logException("Find method implementations failure ", e);
 			return null;
-		}
-		ITypeRoot typeRoot = (ICompilationUnit) method.getAncestor(IJavaElement.COMPILATION_UNIT);
-		if (typeRoot == null) {
-			typeRoot = (IClassFile) method.getAncestor(IJavaElement.CLASS_FILE);
 		}
 
 		CompilationUnit ast = CoreASTProvider.getInstance().getAST(typeRoot, CoreASTProvider.WAIT_YES, monitor);

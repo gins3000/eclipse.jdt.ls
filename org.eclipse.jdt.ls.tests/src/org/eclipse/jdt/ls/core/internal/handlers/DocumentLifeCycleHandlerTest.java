@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -12,7 +14,10 @@ package org.eclipse.jdt.ls.core.internal.handlers;
 
 import static org.eclipse.jdt.ls.core.internal.Lsp4jAssertions.assertRange;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,6 +33,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jdt.core.ICompilationUnit;
@@ -41,11 +47,17 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.manipulation.CoreASTProvider;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.JavaClientConnection;
+import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.ProjectUtils;
+import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.WorkspaceHelper;
 import org.eclipse.jdt.ls.core.internal.managers.AbstractProjectsManagerBasedTest;
+import org.eclipse.jdt.ls.core.internal.preferences.ClientPreferences;
 import org.eclipse.jdt.ls.core.internal.preferences.Preferences;
 import org.eclipse.jdt.ls.core.internal.preferences.Preferences.Severity;
+import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
@@ -59,10 +71,12 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.runners.MockitoJUnitRunner;
 
@@ -76,6 +90,9 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 
 	private File temp;
 
+	@Mock
+	private ClientPreferences clientPreferences;
+
 	@Before
 	public void setup() throws Exception {
 		mockPreferences();
@@ -85,10 +102,12 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		//		sharedASTProvider.clearASTCreationCount();
 		javaClient = new JavaClientConnection(client);
 		lifeCycleHandler = new DocumentLifeCycleHandler(javaClient, preferenceManager, projectsManager, false);
+		JavaLanguageServerPlugin.getNonProjectDiagnosticsState().setGlobalErrorLevel(true);
 	}
 
 	@After
 	public void tearDown() throws Exception {
+		JavaLanguageServerPlugin.getNonProjectDiagnosticsState().setGlobalErrorLevel(true);
 		javaClient.disconnect();
 		for (ICompilationUnit cu : JavaCore.getWorkingCopies(null)) {
 			cu.discardWorkingCopy();
@@ -116,8 +135,9 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		ICompilationUnit cu = pack1.createCompilationUnit("F.java", buf.toString(), false, null);
 		openDocument(cu, cu.getSource(), 1);
 
-		List<Command> commands = getCodeActions(cu);
-		assertEquals(commands.size(), 1);
+		List<Either<Command, CodeAction>> codeActions = getCodeActions(cu);
+		assertEquals(codeActions.size(), 1);
+		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
 	}
 
 	@Test
@@ -138,11 +158,12 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		buf.append("}\n");
 		ICompilationUnit cu = pack1.createCompilationUnit("E.java", buf.toString(), false, null);
 
-		List<Command> commands = getCodeActions(cu);
-		assertEquals(commands.size(), 1);
+		List<Either<Command, CodeAction>> codeActions = getCodeActions(cu);
+		assertEquals(codeActions.size(), 1);
+		assertEquals(codeActions.get(0).getRight().getKind(), CodeActionKind.QuickFix);
 	}
 
-	protected List<Command> getCodeActions(ICompilationUnit cu) throws JavaModelException {
+	protected List<Either<Command, CodeAction>> getCodeActions(ICompilationUnit cu) throws JavaModelException {
 
 		CompilationUnit astRoot = CoreASTProvider.getInstance().getAST(cu, CoreASTProvider.WAIT_YES, null);
 		IProblem[] problems = astRoot.getProblems();
@@ -156,10 +177,11 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		parms.setTextDocument(textDocument);
 		parms.setRange(range);
 		CodeActionContext context = new CodeActionContext();
-		context.setDiagnostics(DiagnosticsHandler.toDiagnosticsArray(cu, Arrays.asList(problems)));
+		context.setDiagnostics(DiagnosticsHandler.toDiagnosticsArray(cu, Arrays.asList(problems), true));
+		context.setOnly(Arrays.asList(CodeActionKind.QuickFix));
 		parms.setContext(context);
 
-		return new CodeActionHandler().getCodeActionCommands(parms, new NullProgressMonitor());
+		return new CodeActionHandler(this.preferenceManager).getCodeActionCommands(parms, new NullProgressMonitor());
 	}
 
 	private Range getRange(ICompilationUnit cu, IProblem[] problems) throws JavaModelException {
@@ -172,6 +194,8 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		Mockito.when(preferenceManager.getPreferences()).thenReturn(mockPreferences);
 		Mockito.when(preferenceManager.getPreferences(Mockito.any())).thenReturn(mockPreferences);
 		Mockito.when(mockPreferences.getIncompleteClasspathSeverity()).thenReturn(Severity.ignore);
+		when(this.preferenceManager.getClientPreferences()).thenReturn(clientPreferences);
+		when(clientPreferences.isSupportedCodeActionKind(CodeActionKind.QuickFix)).thenReturn(true);
 		return mockPreferences;
 	}
 
@@ -230,6 +254,80 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		assertNewProblemReported();
 		assertEquals(0, getCacheSize());
 		assertNewASTsCreated(0);
+	}
+
+	@Test
+	public void testBasicBufferLifeCycleWithoutSave() throws Exception {
+		IJavaProject javaProject = newEmptyProject();
+		IPackageFragmentRoot sourceFolder = javaProject.getPackageFragmentRoot(javaProject.getProject().getFolder("src"));
+		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
+
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("public class E123 {\n");
+		buf.append("    public boolean foo() {\n");
+		buf.append("        return x;\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		ICompilationUnit cu1 = pack1.createCompilationUnit("E123.java", buf.toString(), false, null);
+
+		openDocument(cu1, cu1.getSource(), 1);
+
+		assertEquals(true, cu1.isWorkingCopy());
+		assertEquals(false, cu1.hasUnsavedChanges());
+		assertNewProblemReported(new ExpectedProblemReport(cu1, 1));
+		assertEquals(1, getCacheSize());
+		assertNewASTsCreated(1);
+
+		buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("public class E123 {\n");
+		buf.append("    public boolean foo() {\n");
+		buf.append("        return true;\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+
+		changeDocumentFull(cu1, buf.toString(), 2);
+
+		assertEquals(true, cu1.isWorkingCopy());
+		assertEquals(true, cu1.hasUnsavedChanges());
+		assertNewProblemReported(new ExpectedProblemReport(cu1, 0));
+		assertEquals(1, getCacheSize());
+		assertNewASTsCreated(1);
+
+		closeDocument(cu1);
+
+		assertEquals(false, cu1.isWorkingCopy());
+		assertEquals(false, cu1.hasUnsavedChanges());
+		assertNewProblemReported(new ExpectedProblemReport(cu1, 1));
+		assertEquals(0, getCacheSize());
+		assertNewASTsCreated(0);
+	}
+
+	@Test
+	public void testReconcile() throws Exception {
+		IJavaProject javaProject = newEmptyProject();
+		IPackageFragmentRoot sourceFolder = javaProject.getPackageFragmentRoot(javaProject.getProject().getFolder("src"));
+		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("public class E123 {\n");
+		buf.append("    public void testing() {\n");
+		buf.append("        int someIntegerChanged = 5;\n");
+		buf.append("        int i = someInteger + 5\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		ICompilationUnit cu1 = pack1.createCompilationUnit("E123.java", buf.toString(), false, null);
+		openDocument(cu1, cu1.getSource(), 1);
+		assertEquals(true, cu1.isWorkingCopy());
+		assertEquals(false, cu1.hasUnsavedChanges());
+		List<PublishDiagnosticsParams> diagnosticsParams = getClientRequests("publishDiagnostics");
+		assertEquals(1, diagnosticsParams.size());
+		PublishDiagnosticsParams diagnosticsParam = diagnosticsParams.get(0);
+		List<Diagnostic> diagnostics = diagnosticsParam.getDiagnostics();
+		assertEquals(2, diagnostics.size());
+		diagnosticsParams.clear();
+		closeDocument(cu1);
 	}
 
 	@Test
@@ -406,7 +504,9 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		List<PublishDiagnosticsParams> diagnosticReports = getClientRequests("publishDiagnostics");
 		assertEquals(1, diagnosticReports.size());
 		PublishDiagnosticsParams diagParam = diagnosticReports.get(0);
-		assertEquals(0, diagParam.getDiagnostics().size());
+		assertEquals(1, diagParam.getDiagnostics().size());
+		Diagnostic d = diagParam.getDiagnostics().get(0);
+		assertEquals("Foo.java is a non-project file, only syntax errors are reported", d.getMessage());
 	}
 
 	@Test
@@ -423,7 +523,7 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		List<PublishDiagnosticsParams> diagnosticReports = getClientRequests("publishDiagnostics");
 		assertEquals(1, diagnosticReports.size());
 		PublishDiagnosticsParams diagParam = diagnosticReports.get(0);
-		assertEquals(1, diagParam.getDiagnostics().size());
+		assertEquals(2, diagParam.getDiagnostics().size());
 		closeDocument(cu);
 		Job.getJobManager().join(DocumentLifeCycleHandler.DOCUMENT_LIFE_CYCLE_JOBS, monitor);
 		diagnosticReports = getClientRequests("publishDiagnostics");
@@ -455,8 +555,11 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		List<PublishDiagnosticsParams> diagnosticReports = getClientRequests("publishDiagnostics");
 		assertEquals(1, diagnosticReports.size());
 		PublishDiagnosticsParams diagParam = diagnosticReports.get(0);
-		assertEquals("Unexpected number of errors " + diagParam.getDiagnostics(), 1, diagParam.getDiagnostics().size());
+		assertEquals("Unexpected number of errors " + diagParam.getDiagnostics(), 2, diagParam.getDiagnostics().size());
 		Diagnostic d = diagParam.getDiagnostics().get(0);
+		assertEquals("Foo.java is a non-project file, only syntax errors are reported", d.getMessage());
+		assertRange(0, 0, 1, d.getRange());
+		d = diagParam.getDiagnostics().get(1);
 		assertEquals("Syntax error, insert \";\" to complete BlockStatements", d.getMessage());
 		assertRange(3, 17, 18, d.getRange());
 	}
@@ -489,18 +592,43 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		assertEquals(1, diagnosticReports.size());
 		PublishDiagnosticsParams diagParam = diagnosticReports.get(0);
 
-		assertEquals("Unexpected number of errors " + diagParam.getDiagnostics(), 3, diagParam.getDiagnostics().size());
+		assertEquals("Unexpected number of errors " + diagParam.getDiagnostics(), 4, diagParam.getDiagnostics().size());
 		Diagnostic d = diagParam.getDiagnostics().get(0);
+		assertEquals("Foo.java is a non-project file, only syntax errors are reported", d.getMessage());
+		assertRange(0, 0, 1, d.getRange());
+		
+		d = diagParam.getDiagnostics().get(1);
 		assertEquals("Cannot use this in a static context", d.getMessage());
 		assertRange(3, 21, 25, d.getRange());
 
-		d = diagParam.getDiagnostics().get(1);
+		d = diagParam.getDiagnostics().get(2);
 		assertEquals("Duplicate method method1() in type Foo", d.getMessage());
 		assertRange(5, 13, 22, d.getRange());
 
-		d = diagParam.getDiagnostics().get(2);
+		d = diagParam.getDiagnostics().get(3);
 		assertEquals("Duplicate method method1() in type Foo", d.getMessage());
 		assertRange(7, 13, 22, d.getRange());
+	}
+
+	@Test
+	public void testDidOpenLazyLoadingInvisibleProject() throws Exception {
+		File standaloneFolder = copyFiles("singlefile/lesson1", true);
+		IPath rootPath = org.eclipse.core.runtime.Path.fromOSString(standaloneFolder.getAbsolutePath());
+		preferences.setRootPaths(Collections.singletonList(rootPath));
+		when(preferenceManager.getPreferences()).thenReturn(preferences);
+		IPath triggerFile = rootPath.append("src/org/samples/HelloWorld.java");
+		URI fileURI = triggerFile.toFile().toURI();
+		String projectName = ProjectUtils.getWorkspaceInvisibleProjectName(rootPath);
+
+		assertFalse(ProjectUtils.getProject(projectName).exists());
+
+		openDocument(fileURI.toString(), ResourceUtils.getContent(fileURI), 1);
+		Job.getJobManager().join(DocumentLifeCycleHandler.DOCUMENT_LIFE_CYCLE_JOBS, monitor);
+
+		assertTrue(ProjectUtils.getProject(projectName).exists());
+		ICompilationUnit cu = JDTUtils.resolveCompilationUnit(fileURI);
+		assertNotNull(cu);
+		assertEquals(projectName, cu.getJavaProject().getProject().getName());
 	}
 
 	@Test
@@ -613,6 +741,49 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 		assertEquals("Unexpected number of errors", 1, problems.length);
 	}
 
+	@Test
+	public void testCloseMissingResource() throws Exception {
+		IJavaProject javaProject = newEmptyProject();
+		IPackageFragmentRoot sourceFolder = javaProject.getPackageFragmentRoot(javaProject.getProject().getFolder("src"));
+		IPackageFragment pack1 = sourceFolder.createPackageFragment("test1", false, null);
+
+		StringBuilder buf = new StringBuilder();
+		buf.append("package test1;\n");
+		buf.append("public class E123 {\n");
+		buf.append("    public boolean foo() {\n");
+		buf.append("        return x;\n");
+		buf.append("    }\n");
+		buf.append("}\n");
+		ICompilationUnit cu1 = pack1.createCompilationUnit("E123.java", buf.toString(), false, null);
+
+		openDocument(cu1, cu1.getSource(), 1);
+
+		assertEquals(true, cu1.isWorkingCopy());
+		assertEquals(false, cu1.hasUnsavedChanges());
+		assertNewProblemReported(new ExpectedProblemReport(cu1, 1));
+		assertEquals(1, getCacheSize());
+		assertNewASTsCreated(1);
+
+		StringBuilder buf2 = new StringBuilder();
+		buf2.append("package test1;\n");
+		buf2.append("public class E123 {\n");
+		buf2.append("    public boolean foo() {\n");
+		buf2.append("        return true;\n");
+		buf2.append("    }\n");
+		buf2.append("}\n");
+		changeDocumentFull(cu1, buf2.toString(), 2);
+		File file = cu1.getResource().getRawLocation().toFile();
+		boolean deleted = file.delete();
+		assertTrue(file.getAbsolutePath() + " hasn't been deleted", deleted);
+		closeDocument(cu1);
+
+		assertEquals(false, cu1.isWorkingCopy());
+		assertEquals(false, cu1.hasUnsavedChanges());
+		assertNewProblemReported(new ExpectedProblemReport(cu1, 0));
+		assertEquals(0, getCacheSize());
+		assertNewASTsCreated(0);
+	}
+
 	private File createTempFile(File parent, String fileName, String content) throws IOException {
 		parent.mkdirs();
 		File file = new File(parent, fileName);
@@ -638,11 +809,15 @@ public class DocumentLifeCycleHandlerTest extends AbstractProjectsManagerBasedTe
 	}
 
 	private void openDocument(ICompilationUnit cu, String content, int version) {
+		openDocument(JDTUtils.toURI(cu), content, version);
+	}
+
+	private void openDocument(String uri, String content, int version) {
 		DidOpenTextDocumentParams openParms = new DidOpenTextDocumentParams();
 		TextDocumentItem textDocument = new TextDocumentItem();
 		textDocument.setLanguageId("java");
 		textDocument.setText(content);
-		textDocument.setUri(JDTUtils.toURI(cu));
+		textDocument.setUri(uri);
 		textDocument.setVersion(version);
 		openParms.setTextDocument(textDocument);
 		lifeCycleHandler.didOpen(openParms);

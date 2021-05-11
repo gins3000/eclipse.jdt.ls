@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -11,15 +13,16 @@
 
 package org.eclipse.jdt.ls.core.internal.refactoring;
 
-import java.util.Arrays;
 import java.util.Hashtable;
 
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.ls.core.internal.JavaCodeActionKind;
 import org.eclipse.jdt.ls.core.internal.correction.AbstractSelectionTest;
 import org.eclipse.jdt.ls.core.internal.correction.TestOptions;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -36,7 +39,8 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 
 		fJProject1.setOptions(options);
 		fSourceFolder = fJProject1.getPackageFragmentRoot(fJProject1.getProject().getFolder("src"));
-		this.setIgnoredCommands(Arrays.asList("Extract to method"));
+		setOnly(CodeActionKind.Refactor);
+		this.setIgnoredCommands("Extract to method");
 	}
 
 	@Test
@@ -61,7 +65,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("        int x= /*]*/j/*[*/;\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString());
+		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -71,7 +75,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("        int x= /*]*/j/*[*/;\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Extract to local variable", buf.toString());
+		Expected e2 = new Expected("Extract to local variable", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -82,7 +86,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("		int x= _0;\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e3 = new Expected("Extract to constant", buf.toString());
+		Expected e3 = new Expected("Extract to constant", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_CONSTANT);
 
 		assertCodeActions(cu, e1, e2, e3);
 	}
@@ -117,7 +121,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("        Number n= nl.get(/*]*/i/*[*/);\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString());
+		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -131,7 +135,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("        Number n= nl.get(/*]*/i/*[*/);\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Extract to local variable", buf.toString());
+		Expected e2 = new Expected("Extract to local variable", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -146,7 +150,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("		Number n= nl.get(_0);\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e3 = new Expected("Extract to constant", buf.toString());
+		Expected e3 = new Expected("Extract to constant", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_CONSTANT);
 
 		assertCodeActions(cu, e1, e2, e3);
 	}
@@ -181,7 +185,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("		}\n");
 		buf.append("	}	\n");
 		buf.append("}\n");
-		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString());
+		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -195,7 +199,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("		}\n");
 		buf.append("	}	\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Extract to local variable", buf.toString());
+		Expected e2 = new Expected("Extract to local variable", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -210,7 +214,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("		}\n");
 		buf.append("	}	\n");
 		buf.append("}\n");
-		Expected e3 = new Expected("Extract to constant", buf.toString());
+		Expected e3 = new Expected("Extract to constant", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_CONSTANT);
 
 		assertCodeActions(cu, e1, e2, e3);
 	}
@@ -238,7 +242,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("	}\n");
 		buf.append("}\n");
 
-		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString());
+		Expected e1 = new Expected("Extract to local variable (replace all occurrences)", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -248,7 +252,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("        String x= /*]*/string/*[*/;\n");
 		buf.append("	}\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Extract to local variable", buf.toString());
+		Expected e2 = new Expected("Extract to local variable", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_VARIABLE);
 
 		buf = new StringBuilder();
 		buf.append("package test1;\n");
@@ -260,7 +264,7 @@ public class ExtractVariableTest extends AbstractSelectionTest {
 		buf.append("	}\n");
 		buf.append("}\n");
 
-		Expected e3 = new Expected("Extract to constant", buf.toString());
+		Expected e3 = new Expected("Extract to constant", buf.toString(), JavaCodeActionKind.REFACTOR_EXTRACT_CONSTANT);
 
 		assertCodeActions(cu, e1, e2, e3);
 	}

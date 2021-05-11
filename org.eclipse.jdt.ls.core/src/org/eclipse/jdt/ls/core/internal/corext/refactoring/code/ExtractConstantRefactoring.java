@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.code.ExtractConstantRefactoring
  *
@@ -70,6 +72,7 @@ import org.eclipse.jdt.core.refactoring.descriptors.JavaRefactoringDescriptor;
 import org.eclipse.jdt.internal.core.manipulation.StubUtility;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
 import org.eclipse.jdt.internal.core.refactoring.descriptors.RefactoringSignatureDescriptorFactory;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.eclipse.jdt.internal.corext.dom.IASTSharedValues;
@@ -83,10 +86,9 @@ import org.eclipse.jdt.internal.corext.refactoring.JavaRefactoringDescriptorUtil
 import org.eclipse.jdt.internal.corext.refactoring.structure.CompilationUnitRewrite;
 import org.eclipse.jdt.internal.corext.refactoring.util.RefactoringASTParser;
 import org.eclipse.jdt.internal.corext.util.JdtFlags;
-import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.IConstants;
 import org.eclipse.jdt.ls.core.internal.Messages;
 import org.eclipse.jdt.ls.core.internal.corext.SourceRangeFactory;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.corext.dom.fragments.ASTFragmentFactory;
 import org.eclipse.jdt.ls.core.internal.corext.dom.fragments.IASTFragment;
 import org.eclipse.jdt.ls.core.internal.corext.dom.fragments.IExpressionFragment;
@@ -145,6 +147,8 @@ public class ExtractConstantRefactoring extends Refactoring {
 	private LinkedProposalModelCore fLinkedProposalModel;
 	private boolean fCheckResultForCompileProblems;
 
+	private Map fFormatterOptions;
+
 	/**
 	 * Creates a new extract constant refactoring
 	 *
@@ -156,6 +160,10 @@ public class ExtractConstantRefactoring extends Refactoring {
 	 *            length
 	 */
 	public ExtractConstantRefactoring(ICompilationUnit unit, int selectionStart, int selectionLength) {
+		this(unit, selectionStart, selectionLength, null);
+	}
+
+	public ExtractConstantRefactoring(ICompilationUnit unit, int selectionStart, int selectionLength, Map formatterOptions) {
 		Assert.isTrue(selectionStart >= 0);
 		Assert.isTrue(selectionLength >= 0);
 		fSelectionStart = selectionStart;
@@ -165,9 +173,14 @@ public class ExtractConstantRefactoring extends Refactoring {
 		fLinkedProposalModel = null;
 		fConstantName = ""; //$NON-NLS-1$
 		fCheckResultForCompileProblems = true;
+		fFormatterOptions = formatterOptions;
 	}
 
 	public ExtractConstantRefactoring(CompilationUnit astRoot, int selectionStart, int selectionLength) {
+		this(astRoot, selectionStart, selectionLength, null);
+	}
+
+	public ExtractConstantRefactoring(CompilationUnit astRoot, int selectionStart, int selectionLength, Map formatterOptions) {
 		Assert.isTrue(selectionStart >= 0);
 		Assert.isTrue(selectionLength >= 0);
 		Assert.isTrue(astRoot.getTypeRoot() instanceof ICompilationUnit);
@@ -175,10 +188,11 @@ public class ExtractConstantRefactoring extends Refactoring {
 		fSelectionStart = selectionStart;
 		fSelectionLength = selectionLength;
 		fCu = (ICompilationUnit) astRoot.getTypeRoot();
-		fCuRewrite = new CompilationUnitRewrite(fCu, astRoot);
+		fCuRewrite = new CompilationUnitRewrite(null, fCu, astRoot, formatterOptions);
 		fLinkedProposalModel = null;
 		fConstantName = ""; //$NON-NLS-1$
 		fCheckResultForCompileProblems = true;
+		fFormatterOptions = formatterOptions;
 	}
 
 	public ExtractConstantRefactoring(JavaRefactoringArguments arguments, RefactoringStatus status) {
@@ -279,7 +293,7 @@ public class ExtractConstantRefactoring extends Refactoring {
 		try {
 			pm.beginTask("", 7); //$NON-NLS-1$
 
-			RefactoringStatus result = Checks.validateEdit(fCu, getValidationContext());
+			RefactoringStatus result = Checks.validateEdit(fCu, getValidationContext(), pm);
 			if (result.hasFatalError()) {
 				return result;
 			}
@@ -287,7 +301,7 @@ public class ExtractConstantRefactoring extends Refactoring {
 
 			if (fCuRewrite == null) {
 				CompilationUnit cuNode = RefactoringASTParser.parseWithASTProvider(fCu, true, new SubProgressMonitor(pm, 3));
-				fCuRewrite = new CompilationUnitRewrite(fCu, cuNode);
+				fCuRewrite = new CompilationUnitRewrite(null, fCu, cuNode, fFormatterOptions);
 			} else {
 				pm.worked(3);
 			}
@@ -361,10 +375,10 @@ public class ExtractConstantRefactoring extends Refactoring {
 		   ExtractTempRefactoring, others */
 		switch (Checks.checkExpressionIsRValue(getSelectedExpression().getAssociatedExpression())) {
 			case Checks.NOT_RVALUE_MISC:
-				return RefactoringStatus.createStatus(RefactoringStatus.FATAL, RefactoringCoreMessages.ExtractConstantRefactoring_select_expression, null, JavaLanguageServerPlugin.PLUGIN_ID, RefactoringStatusCodes.EXPRESSION_NOT_RVALUE,
+				return RefactoringStatus.createStatus(RefactoringStatus.FATAL, RefactoringCoreMessages.ExtractConstantRefactoring_select_expression, null, IConstants.PLUGIN_ID, RefactoringStatusCodes.EXPRESSION_NOT_RVALUE,
 						null);
 			case Checks.NOT_RVALUE_VOID:
-				return RefactoringStatus.createStatus(RefactoringStatus.FATAL, RefactoringCoreMessages.ExtractConstantRefactoring_no_void, null, JavaLanguageServerPlugin.PLUGIN_ID, RefactoringStatusCodes.EXPRESSION_NOT_RVALUE_VOID, null);
+				return RefactoringStatus.createStatus(RefactoringStatus.FATAL, RefactoringCoreMessages.ExtractConstantRefactoring_no_void, null, IConstants.PLUGIN_ID, RefactoringStatusCodes.EXPRESSION_NOT_RVALUE_VOID, null);
 			case Checks.IS_RVALUE_GUESSED:
 			case Checks.IS_RVALUE:
 				return new RefactoringStatus();
@@ -529,7 +543,7 @@ public class ExtractConstantRefactoring extends Refactoring {
 		//		boolean createComments = JavaPreferencesSettings.getCodeGenerationSettings(fCu.getJavaProject()).createComments;
 		//		if (createComments) {
 		String comment = CodeGeneration.getFieldComment(fCu, getConstantTypeName(), fConstantName, StubUtility.getLineDelimiterUsed(fCu));
-		if (comment != null && comment.length() > 0 && !"/**\n *\n */\n".equals(comment)) {
+		if (comment != null && comment.length() > 0 && !"/**\n *\n */".equals(comment)) {
 			Javadoc doc = (Javadoc) fCuRewrite.getASTRewrite().createStringPlaceholder(comment, ASTNode.JAVADOC);
 			fieldDeclaration.setJavadoc(doc);
 		}

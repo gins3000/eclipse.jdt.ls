@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017,2018 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -33,6 +35,8 @@ import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.manipulation.OrganizeImportsOperation;
+import org.eclipse.jdt.ls.core.internal.ChangeUtil;
+import org.eclipse.jdt.ls.core.internal.IConstants;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
@@ -40,7 +44,9 @@ import org.eclipse.jdt.ls.core.internal.TextEditConverter;
 import org.eclipse.jdt.ls.core.internal.corrections.InnovationContext;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.CUCorrectionProposal;
 import org.eclipse.jdt.ls.core.internal.corrections.proposals.IProposalRelevance;
+import org.eclipse.jdt.ls.core.internal.handlers.OrganizeImportsHandler;
 import org.eclipse.jface.text.IDocument;
+import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.ltk.core.refactoring.TextChange;
 import org.eclipse.text.edits.TextEdit;
@@ -53,7 +59,7 @@ public class OrganizeImportsCommand {
 			final String fileUri = (String) arguments.get(0);
 			final IPath rootPath = ResourceUtils.filePathFromURI(fileUri);
 			if (rootPath == null) {
-				throw new CoreException(new Status(IStatus.ERROR, JavaLanguageServerPlugin.PLUGIN_ID, "URI is not found"));
+				throw new CoreException(new Status(IStatus.ERROR, IConstants.PLUGIN_ID, "URI is not found"));
 			}
 			final IWorkspaceRoot wsroot = ResourcesPlugin.getWorkspace().getRoot();
 			IResource resource = wsroot.getFileForLocation(rootPath);
@@ -170,12 +176,16 @@ public class OrganizeImportsCommand {
 	public void organizeImportsInCompilationUnit(ICompilationUnit unit, WorkspaceEdit rootEdit) {
 		try {
 			InnovationContext context = new InnovationContext(unit, 0, unit.getBuffer().getLength() - 1);
-			CUCorrectionProposal proposal = new CUCorrectionProposal("OrganizeImports", unit, IProposalRelevance.ORGANIZE_IMPORTS) {
+			CUCorrectionProposal proposal = new CUCorrectionProposal("OrganizeImports", CodeActionKind.SourceOrganizeImports, unit, null, IProposalRelevance.ORGANIZE_IMPORTS) {
 				@Override
 				protected void addEdits(IDocument document, TextEdit editRoot) throws CoreException {
 					CompilationUnit astRoot = context.getASTRoot();
 					OrganizeImportsOperation op = new OrganizeImportsOperation(unit, astRoot, true, false, true, null);
-					editRoot.addChild(op.createTextEdit(null));
+					TextEdit edit = op.createTextEdit(null);
+					TextEdit staticEdit = OrganizeImportsHandler.wrapStaticImports(edit, astRoot, unit);
+					if (staticEdit.getChildrenSize() > 0) {
+						editRoot.addChild(staticEdit);
+					}
 				}
 			};
 
@@ -242,6 +252,9 @@ public class OrganizeImportsCommand {
 		TextChange textChange = proposal.getTextChange();
 		TextEdit edit = textChange.getEdit();
 		TextEditConverter converter = new TextEditConverter(cu, edit);
-		rootEdit.getChanges().put(JDTUtils.toURI(cu), converter.convert());
+		List<org.eclipse.lsp4j.TextEdit> edits = converter.convert();
+		if (ChangeUtil.hasChanges(edits)) {
+			rootEdit.getChanges().put(JDTUtils.toURI(cu), edits);
+		}
 	}
 }

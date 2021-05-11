@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.code.ExtractMethodAnalyzer
@@ -15,6 +17,7 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.corext.refactoring.code;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -73,8 +76,10 @@ import org.eclipse.jdt.core.dom.WhileStatement;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite.ImportRewriteContext;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite.TypeLocation;
+import org.eclipse.jdt.internal.core.manipulation.BindingLabelProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
@@ -84,9 +89,7 @@ import org.eclipse.jdt.internal.corext.refactoring.Checks;
 import org.eclipse.jdt.internal.corext.refactoring.util.CodeAnalyzer;
 import org.eclipse.jdt.internal.corext.refactoring.util.JavaStatusContext;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
-import org.eclipse.jdt.ls.core.internal.BindingLabelProvider;
 import org.eclipse.jdt.ls.core.internal.Messages;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.corext.dom.LocalVariableIndex;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.RefactoringCoreMessages;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.code.flow.FlowContext;
@@ -96,8 +99,6 @@ import org.eclipse.jdt.ls.core.internal.corext.refactoring.code.flow.InputFlowAn
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 import org.eclipse.jface.text.IRegion;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
-
-import com.ibm.icu.text.MessageFormat;
 
 /* package */ class ExtractMethodAnalyzer extends CodeAnalyzer {
 
@@ -206,7 +207,7 @@ import com.ibm.icu.text.MessageFormat;
 
 	boolean isValidDestination(ASTNode node) {
 		boolean isInterface = node instanceof TypeDeclaration && ((TypeDeclaration) node).isInterface();
-		return !(node instanceof AnnotationTypeDeclaration) && !(isInterface && !JavaModelUtil.is18OrHigher(fCUnit.getJavaProject()));
+		return !(node instanceof AnnotationTypeDeclaration) && !(isInterface && !JavaModelUtil.is1d8OrHigher(fCUnit.getJavaProject()));
 	}
 
 	public RefactoringStatus checkInitialConditions(ImportRewrite rewriter) {
@@ -628,7 +629,7 @@ import com.ibm.icu.text.MessageFormat;
 				StringBuffer affectedLocals = new StringBuffer();
 				for (int i = 0; i < localReads.size(); i++) {
 					IVariableBinding binding = localReads.get(i);
-					String bindingName = BindingLabelProvider.getBindingLabel(binding, BindingLabelProvider.DEFAULT_TEXTFLAGS | JavaElementLabels.F_PRE_TYPE_SIGNATURE);
+					String bindingName = BindingLabelProviderCore.getBindingLabel(binding, BindingLabelProviderCore.DEFAULT_TEXTFLAGS | JavaElementLabels.F_PRE_TYPE_SIGNATURE);
 					affectedLocals.append(bindingName);
 					if (i != localReads.size() - 1) {
 						affectedLocals.append('\n');

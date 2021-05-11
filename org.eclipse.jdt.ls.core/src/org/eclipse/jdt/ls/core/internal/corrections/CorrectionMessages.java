@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Copied from /org.eclipse.jdt.ui/src/org/eclipse/jdt/internal/ui/text/correction/CorrectionMessages.java
  *
@@ -66,6 +68,8 @@ public final class CorrectionMessages extends NLS {
 	public static String QuickAssistProcessor_inline_local_description;
 	public static String QuickAssistProcessor_name_extension_from_class;
 	public static String QuickAssistProcessor_name_extension_from_interface;
+	public static String QuickAssistProcessor_convert_to_static_import;
+	public static String QuickAssistProcessor_convert_to_static_import_replace_all;
 	public static String SerialVersionHashOperation_computing_id;
 	public static String SerialVersionHashOperation_error_classnotfound;
 	public static String SerialVersionHashOperation_save_caption;
@@ -143,6 +147,9 @@ public final class CorrectionMessages extends NLS {
 	public static String RenameRefactoringProposal_additionalInfo;
 	public static String RenameRefactoringProposal_name;
 
+	public static String ModifierCorrectionSubProcessor_changemodifierto_final_description;
+	public static String ModifierCorrectionSubProcessor_changemodifierto_sealed_description;
+	public static String ModifierCorrectionSubProcessor_changemodifierto_nonsealed_description;
 	public static String ModifierCorrectionSubProcessor_changemodifiertoabstract_description;
 	public static String ModifierCorrectionSubProcessor_changemodifiertostatic_description;
 	public static String ModifierCorrectionSubProcessor_changemodifiertononstatic_description;
@@ -258,6 +265,10 @@ public final class CorrectionMessages extends NLS {
 	public static String NewCUCompletionUsingWizardProposal_createenum_info;
 	public static String NewCUCompletionUsingWizardProposal_createinterface_info;
 	public static String NewCUCompletionUsingWizardProposal_createannotation_info;
+	public static String NewCUCompletionUsingWizardProposal_createnewclass_inpackage_description;
+	public static String NewCUCompletionUsingWizardProposal_createnewinterface_inpackage_description;
+	public static String NewCUCompletionUsingWizardProposal_createnewannotation_inpackage_description;
+	public static String NewCUCompletionUsingWizardProposal_createnewenum_inpackage_description;
 	public static String ConfigureProblemSeveritySubProcessor_info;
 	public static String ConfigureProblemSeveritySubProcessor_name;
 	public static String ConstructorFromSuperclassProposal_description;
@@ -377,6 +388,7 @@ public final class CorrectionMessages extends NLS {
 	public static String ReorgCorrectionsSubProcessor_configure_buildpath_description;
 	public static String QuickAssistProcessor_extract_to_local_all_description;
 	public static String QuickAssistProcessor_extract_to_local_description;
+	public static String QuickAssistProcessor_extract_to_field_description;
 	public static String QuickAssistProcessor_extractmethod_description;
 	public static String QuickAssistProcessor_move_exception_to_separate_catch_block;
 	public static String QuickAssistProcessor_move_exceptions_to_separate_catch_block;

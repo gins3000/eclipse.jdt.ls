@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2018 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -86,7 +88,7 @@ public class GetterSetterQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        c.setTest(c.getTest() + 1);\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'test'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'test'", buf.toString());
 		assertCodeActions(cu, e1, e2);
 	}
 
@@ -144,7 +146,7 @@ public class GetterSetterQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        c.setTest(c.getTest() + (1 + 2));\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'test'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'test'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -203,7 +205,7 @@ public class GetterSetterQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        c.setTest(c.getTest() - (1 + 2));\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'test'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'test'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -262,7 +264,7 @@ public class GetterSetterQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        c.setTest(c.getTest() * (1 + 2));\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 'test'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 'test'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}
@@ -413,7 +415,7 @@ public class GetterSetterQuickFixTest extends AbstractQuickFixTest {
 		buf.append("        new A().setT(5);\n");
 		buf.append("    }\n");
 		buf.append("}\n");
-		Expected e2 = new Expected("Create getter and setter for 't'...", buf.toString());
+		Expected e2 = new Expected("Create getter and setter for 't'", buf.toString());
 
 		assertCodeActions(cu, e1, e2);
 	}

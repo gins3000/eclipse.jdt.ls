@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.corext.refactoring.code.ExtractMethodRefactoring
  *
@@ -36,6 +38,7 @@ import org.eclipse.core.runtime.SubProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -91,9 +94,11 @@ import org.eclipse.jdt.core.refactoring.CompilationUnitChange;
 import org.eclipse.jdt.core.refactoring.IJavaRefactorings;
 import org.eclipse.jdt.core.refactoring.descriptors.ExtractMethodDescriptor;
 import org.eclipse.jdt.core.refactoring.descriptors.JavaRefactoringDescriptor;
+import org.eclipse.jdt.internal.core.manipulation.BindingLabelProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
 import org.eclipse.jdt.internal.core.refactoring.descriptors.RefactoringSignatureDescriptorFactory;
+import org.eclipse.jdt.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
 import org.eclipse.jdt.internal.corext.dom.ASTNodes;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
@@ -108,9 +113,7 @@ import org.eclipse.jdt.internal.corext.refactoring.JavaRefactoringArguments;
 import org.eclipse.jdt.internal.corext.refactoring.JavaRefactoringDescriptorUtil;
 import org.eclipse.jdt.internal.corext.refactoring.util.RefactoringASTParser;
 import org.eclipse.jdt.internal.corext.util.JdtFlags;
-import org.eclipse.jdt.ls.core.internal.BindingLabelProvider;
 import org.eclipse.jdt.ls.core.internal.Messages;
-import org.eclipse.jdt.ls.core.internal.corext.codemanipulation.ContextSensitiveImportRewriteContext;
 import org.eclipse.jdt.ls.core.internal.corext.dom.StatementRewrite;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.ParameterInfo;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.RefactoringCoreMessages;
@@ -119,6 +122,8 @@ import org.eclipse.jdt.ls.core.internal.corext.refactoring.util.ResourceUtil;
 import org.eclipse.jdt.ls.core.internal.corext.refactoring.util.SelectionAwareSourceRangeComputer;
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 import org.eclipse.jdt.ls.core.internal.text.correction.ModifierCorrectionSubProcessor;
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.RefactoringChangeDescriptor;
@@ -163,6 +168,7 @@ public class ExtractMethodRefactoring extends Refactoring {
 	// either of type TypeDeclaration or AnonymousClassDeclaration
 	private ASTNode[] fDestinations;
 	private LinkedProposalModelCore fLinkedProposalModel;
+	private Map fFormatterOptions;
 
 	private static final String EMPTY = ""; //$NON-NLS-1$
 
@@ -263,12 +269,17 @@ public class ExtractMethodRefactoring extends Refactoring {
 	 *            selection end
 	 */
 	public ExtractMethodRefactoring(ICompilationUnit unit, int selectionStart, int selectionLength) {
+		this(unit, selectionStart, selectionLength, null);
+	}
+
+	public ExtractMethodRefactoring(ICompilationUnit unit, int selectionStart, int selectionLength, Map formatterOptions) {
 		fCUnit = unit;
 		fRoot = null;
 		fMethodName = "extracted"; //$NON-NLS-1$
 		fSelectionStart = selectionStart;
 		fSelectionLength = selectionLength;
 		fVisibility = -1;
+		fFormatterOptions = formatterOptions;
 	}
 
 	public ExtractMethodRefactoring(JavaRefactoringArguments arguments, RefactoringStatus status) {
@@ -288,7 +299,11 @@ public class ExtractMethodRefactoring extends Refactoring {
 	 *            length
 	 */
 	public ExtractMethodRefactoring(CompilationUnit astRoot, int selectionStart, int selectionLength) {
-		this((ICompilationUnit) astRoot.getTypeRoot(), selectionStart, selectionLength);
+		this(astRoot, selectionStart, selectionLength, null);
+	}
+
+	public ExtractMethodRefactoring(CompilationUnit astRoot, int selectionStart, int selectionLength, Map formatterOptions) {
+		this((ICompilationUnit) astRoot.getTypeRoot(), selectionStart, selectionLength, formatterOptions);
 		fRoot = astRoot;
 	}
 
@@ -315,6 +330,22 @@ public class ExtractMethodRefactoring extends Refactoring {
 	 */
 	@Override
 	public RefactoringStatus checkInitialConditions(IProgressMonitor pm) throws CoreException {
+		RefactoringStatus result = this.internalCheckInitialConditions(pm);
+		if (fSelectionStart < 0 || fSelectionLength == 0 || result.hasFatalError()) {
+			return result;
+		}
+		initializeParameterInfos();
+		initializeUsedNames();
+		initializeDuplicates();
+		initializeDestinations();
+		return result;
+	}
+
+	public RefactoringStatus checkInferConditions(IProgressMonitor pm) throws CoreException {
+		return this.internalCheckInitialConditions(pm);
+	}
+
+	private RefactoringStatus internalCheckInitialConditions(IProgressMonitor pm) throws CoreException {
 		RefactoringStatus result = new RefactoringStatus();
 		pm.beginTask("", 100); //$NON-NLS-1$
 
@@ -323,7 +354,7 @@ public class ExtractMethodRefactoring extends Refactoring {
 		}
 
 		IFile[] changedFiles = ResourceUtil.getFiles(new ICompilationUnit[] { fCUnit });
-		result.merge(Checks.validateModifiesFiles(changedFiles, getValidationContext()));
+		result.merge(Checks.validateModifiesFiles(changedFiles, getValidationContext(), pm));
 		if (result.hasFatalError()) {
 			return result;
 		}
@@ -347,10 +378,6 @@ public class ExtractMethodRefactoring extends Refactoring {
 		if (fVisibility == -1) {
 			setVisibility(Modifier.PRIVATE);
 		}
-		initializeParameterInfos();
-		initializeUsedNames();
-		initializeDuplicates();
-		initializeDestinations();
 		return result;
 	}
 
@@ -572,7 +599,13 @@ public class ExtractMethodRefactoring extends Refactoring {
 				root.addChild(edit);
 				result.addTextEditGroup(new TextEditGroup(RefactoringCoreMessages.ExtractMethodRefactoring_organize_imports, new TextEdit[] { edit }));
 			}
-			root.addChild(fRewriter.rewriteAST());
+			try {
+				Map formatter = this.fFormatterOptions == null ? fCUnit.getOptions(true) : this.fFormatterOptions;
+				IDocument document = new Document(fCUnit.getSource());
+				root.addChild(fRewriter.rewriteAST(document, formatter));
+			} catch (JavaModelException e) {
+				root.addChild(fRewriter.rewriteAST());
+			}
 			return result;
 		} finally {
 			pm.done();
@@ -685,12 +718,12 @@ public class ExtractMethodRefactoring extends Refactoring {
 		}
 		final int flags = RefactoringDescriptor.STRUCTURAL_CHANGE | JavaRefactoringDescriptor.JAR_REFACTORING | JavaRefactoringDescriptor.JAR_SOURCE_ATTACHMENT;
 		final String description = Messages.format(RefactoringCoreMessages.ExtractMethodRefactoring_descriptor_description_short, BasicElementLabels.getJavaElementName(fMethodName));
-		final String label = method != null ? BindingLabelProvider.getBindingLabel(method, JavaElementLabels.ALL_FULLY_QUALIFIED) : '{' + JavaElementLabels.ELLIPSIS_STRING + '}';
+		final String label = method != null ? BindingLabelProviderCore.getBindingLabel(method, JavaElementLabels.ALL_FULLY_QUALIFIED) : '{' + JavaElementLabels.ELLIPSIS_STRING + '}';
 		final String header = Messages.format(RefactoringCoreMessages.ExtractMethodRefactoring_descriptor_description,
-				new String[] { BasicElementLabels.getJavaElementName(getSignature()), label, BindingLabelProvider.getBindingLabel(type, JavaElementLabels.ALL_FULLY_QUALIFIED) });
+				new String[] { BasicElementLabels.getJavaElementName(getSignature()), label, BindingLabelProviderCore.getBindingLabel(type, JavaElementLabels.ALL_FULLY_QUALIFIED) });
 		final JDTRefactoringDescriptorComment comment = new JDTRefactoringDescriptorComment(project, this, header);
 		comment.addSetting(Messages.format(RefactoringCoreMessages.ExtractMethodRefactoring_name_pattern, BasicElementLabels.getJavaElementName(fMethodName)));
-		comment.addSetting(Messages.format(RefactoringCoreMessages.ExtractMethodRefactoring_destination_pattern, BindingLabelProvider.getBindingLabel(type, JavaElementLabels.ALL_FULLY_QUALIFIED)));
+		comment.addSetting(Messages.format(RefactoringCoreMessages.ExtractMethodRefactoring_destination_pattern, BindingLabelProviderCore.getBindingLabel(type, JavaElementLabels.ALL_FULLY_QUALIFIED)));
 		String visibility = JdtFlags.getVisibilityString(fVisibility);
 		if ("".equals(visibility)) {
 			visibility = RefactoringCoreMessages.ExtractMethodRefactoring_default_visibility;
@@ -1000,7 +1033,7 @@ public class ExtractMethodRefactoring extends Refactoring {
 		}
 		if (fLinkedProposalModel != null) {
 			LinkedProposalPositionGroupCore nameGroup = fLinkedProposalModel.getPositionGroup(KEY_NAME, true);
-			nameGroup.addPosition(fRewriter.track(invocation.getName()), false);
+			nameGroup.addPosition(fRewriter.track(invocation.getName()), true);
 		}
 
 		ASTNode call;

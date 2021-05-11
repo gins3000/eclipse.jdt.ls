@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2018 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -16,9 +18,12 @@ import static org.eclipse.jdt.internal.corext.template.java.SignatureUtil.stripS
 
 import java.io.Reader;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jdt.core.CompletionProposal;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMember;
@@ -27,6 +32,10 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.compiler.CharOperation;
+import org.eclipse.jdt.internal.codeassist.InternalCompletionProposal;
+import org.eclipse.jdt.internal.codeassist.impl.Engine;
+import org.eclipse.jdt.internal.compiler.lookup.Binding;
+import org.eclipse.jdt.internal.compiler.lookup.MethodBinding;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
 import org.eclipse.jdt.ls.core.internal.JSONUtility;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
@@ -54,6 +63,9 @@ import com.google.common.util.concurrent.UncheckedTimeoutException;
 @SuppressWarnings("restriction")
 public class CompletionResolveHandler {
 
+	public static final String EMPTY_STRING = "";
+	public static final String DEFAULT = "Default: ";
+	private static final String VALUE = "Value: ";
 	private final PreferenceManager manager;
 
 	public CompletionResolveHandler(PreferenceManager manager) {
@@ -66,6 +78,8 @@ public class CompletionResolveHandler {
 	public static final String DATA_FIELD_NAME = "name";
 	public static final String DATA_FIELD_REQUEST_ID = "rid";
 	public static final String DATA_FIELD_PROPOSAL_ID = "pid";
+	public static final String DATA_FIELD_CONSTANT_VALUE = "constant_value";
+	public static final String DATA_METHOD_DEFAULT_VALUE = "default_value";
 
 	public CompletionItem resolve(CompletionItem param, IProgressMonitor monitor) {
 
@@ -87,14 +101,13 @@ public class CompletionResolveHandler {
 		if (unit == null) {
 			throw new IllegalStateException(NLS.bind("Unable to match Compilation Unit from {0} ", uri));
 		}
-		CompletionProposalReplacementProvider proposalProvider = new CompletionProposalReplacementProvider(unit,
-				completionResponse.getContext(),
-				completionResponse.getOffset(),
-				this.manager.getClientPreferences());
-		proposalProvider.updateReplacement(completionResponse.getProposals().get(proposalId), param, '\0');
 		if (monitor.isCanceled()) {
 			param.setData(null);
 			return param;
+		}
+		if (manager.getClientPreferences().isResolveAdditionalTextEditsSupport()) {
+			CompletionProposalReplacementProvider proposalProvider = new CompletionProposalReplacementProvider(unit, completionResponse.getContext(), completionResponse.getOffset(), manager.getPreferences(), manager.getClientPreferences());
+			proposalProvider.updateAdditionalTextEdits(completionResponse.getProposals().get(proposalId), param, '\0');
 		}
 		if (data.containsKey(DATA_FIELD_DECLARATION_SIGNATURE)) {
 			String typeName = stripSignatureToFQN(String.valueOf(data.get(DATA_FIELD_DECLARATION_SIGNATURE)));
@@ -103,14 +116,28 @@ public class CompletionResolveHandler {
 				IType type = unit.getJavaProject().findType(typeName);
 
 				if (type!=null && data.containsKey(DATA_FIELD_NAME)) {
+					CompletionProposal proposal = completionResponse.getProposals().get(proposalId);
 					String name = data.get(DATA_FIELD_NAME);
 					String[] paramSigs = CharOperation.NO_STRINGS;
 					if(data.containsKey( DATA_FIELD_SIGNATURE)){
-						String[] parameters= Signature.getParameterTypes(String.valueOf(fix83600(data.get(DATA_FIELD_SIGNATURE).toCharArray())));
-						for (int i= 0; i < parameters.length; i++) {
-							parameters[i]= getLowerBound(parameters[i]);
+						if (proposal instanceof InternalCompletionProposal) {
+							Binding binding = ((InternalCompletionProposal) proposal).getBinding();
+							if (binding instanceof MethodBinding) {
+								MethodBinding methodBinding = (MethodBinding) binding;
+								MethodBinding original = methodBinding.original();
+								char[] signature;
+								if (original != binding) {
+									signature = Engine.getSignature(original);
+								} else {
+									signature = Engine.getSignature(methodBinding);
+								}
+								String[] parameters = Signature.getParameterTypes(String.valueOf(fix83600(signature)));
+								for (int i = 0; i < parameters.length; i++) {
+									parameters[i] = getLowerBound(parameters[i]);
+								}
+								paramSigs = parameters;
+							}
 						}
-						paramSigs = parameters;
 					}
 					IMethod method = type.getMethod(name, paramSigs);
 					IMethod[] methods = type.findMethods(method);
@@ -133,7 +160,7 @@ public class CompletionResolveHandler {
 					String javadoc = null;
 					try {
 						final IMember curMember = member;
-						javadoc = new SimpleTimeLimiter().callWithTimeout(() -> {
+						javadoc = SimpleTimeLimiter.create(Executors.newCachedThreadPool()).callWithTimeout(() -> {
 							Reader reader;
 							if (manager.getClientPreferences().isSupportsCompletionDocumentationMarkdown()) {
 								reader = JavadocContentAccess2.getMarkdownContentReader(curMember);
@@ -141,8 +168,8 @@ public class CompletionResolveHandler {
 								reader = JavadocContentAccess.getPlainTextContentReader(curMember);
 							}
 							return reader == null? null:CharStreams.toString(reader);
-						}, 500, TimeUnit.MILLISECONDS, true);
-					} catch (UncheckedTimeoutException tooSlow) {
+						}, 500, TimeUnit.MILLISECONDS);
+					} catch (UncheckedTimeoutException | TimeoutException tooSlow) {
 						//Ignore error for now as it's spamming clients on content assist.
 						//TODO cache javadoc resolution results?
 						//JavaLanguageServerPlugin.logError("Unable to get documentation under 500ms");
@@ -151,13 +178,31 @@ public class CompletionResolveHandler {
 						JavaLanguageServerPlugin.logException("Unable to read documentation", e);
 						monitor.setCanceled(true);
 					}
-					if (manager.getClientPreferences().isSupportsCompletionDocumentationMarkdown()) {
-						MarkupContent markupContent = new MarkupContent();
-						markupContent.setKind(MarkupKind.MARKDOWN);
-						markupContent.setValue(javadoc);
-						param.setDocumentation(markupContent);
-					} else {
-						param.setDocumentation(javadoc);
+					String constantValue = data.get(DATA_FIELD_CONSTANT_VALUE);
+					if (constantValue != null) {
+						if (manager.getClientPreferences().isSupportsCompletionDocumentationMarkdown()) {
+							javadoc = (javadoc == null ? EMPTY_STRING : javadoc) + "\n\n" + VALUE + constantValue;
+						} else {
+							javadoc = (javadoc == null ? EMPTY_STRING : javadoc) + VALUE + constantValue;
+						}
+					}
+					String defaultValue = data.get(DATA_METHOD_DEFAULT_VALUE);
+					if (defaultValue != null) {
+						if (manager.getClientPreferences().isSupportsCompletionDocumentationMarkdown()) {
+							javadoc = (javadoc == null ? EMPTY_STRING : javadoc) + "\n\n" + DEFAULT + defaultValue;
+						} else {
+							javadoc = (javadoc == null ? EMPTY_STRING : javadoc) + DEFAULT + defaultValue;
+						}
+					}
+					if (javadoc != null) {
+						if (manager.getClientPreferences().isSupportsCompletionDocumentationMarkdown()) {
+							MarkupContent markupContent = new MarkupContent();
+							markupContent.setKind(MarkupKind.MARKDOWN);
+							markupContent.setValue(javadoc);
+							param.setDocumentation(markupContent);
+						} else {
+							param.setDocumentation(javadoc);
+						}
 					}
 				}
 			} catch (JavaModelException e) {
@@ -170,4 +215,5 @@ public class CompletionResolveHandler {
 		}
 		return param;
 	}
+
 }

@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016-2017 Red Hat Inc. and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Red Hat Inc. - initial API and implementation
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.jdt.core.IClassFile;
 import org.eclipse.jdt.core.IClasspathAttribute;
 import org.eclipse.jdt.core.IClasspathEntry;
@@ -32,6 +35,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.ls.core.internal.ClassFileUtil;
 import org.eclipse.jdt.ls.core.internal.DependencyUtil;
@@ -172,6 +176,48 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		assertEquals("Should find empty hover for " + payload, "", hover.getContents().getLeft().get(0).getLeft());
 	}
 
+	@Test
+	public void testMissingUnit() throws Exception {
+		URI uri = Paths.get("projects", "maven", "salut", "src", "main", "java", "java", "Missing.java").toUri();
+		String payload = createHoverRequest(uri, 0, 0);
+		TextDocumentPositionParams position = getParams(payload);
+
+		//when
+		Hover hover = handler.hover(position, monitor);
+
+		//then
+		assertNotNull(hover);
+		assertNotNull(hover.getContents());
+		assertEquals(1, hover.getContents().getLeft().size());
+		assertEquals("Should find empty hover for " + payload, "", hover.getContents().getLeft().get(0).getLeft());
+	}
+
+	@Test
+	public void testInvalidJavadoc() throws Exception {
+		importProjects("maven/aspose");
+		IProject project = null;
+		ICompilationUnit unit = null;
+		try {
+			project = ResourcesPlugin.getWorkspace().getRoot().getProject("aspose");
+			IJavaProject javaProject = JavaCore.create(project);
+			IType type = javaProject.findType("org.sample.TestJavadoc");
+			unit = type.getCompilationUnit();
+			unit.becomeWorkingCopy(null);
+			String uri = JDTUtils.toURI(unit);
+			TextDocumentIdentifier textDocument = new TextDocumentIdentifier(uri);
+			TextDocumentPositionParams position = new TextDocumentPositionParams(textDocument, new Position(8, 24));
+			Hover hover = handler.hover(position, monitor);
+			assertNotNull(hover);
+			assertNotNull(hover.getContents());
+			assertEquals(1, hover.getContents().getLeft().size());
+			assertEquals("com.aspose.words.Document.Document(String fileName) throws Exception", hover.getContents().getLeft().get(0).getRight().getValue());
+		} finally {
+			if (unit != null) {
+				unit.discardWorkingCopy();
+			}
+		}
+	}
+
 	String createHoverRequest(String file, int line, int kar) {
 		URI uri = project.getFile(file).getRawLocationURI();
 		return createHoverRequest(uri, line, kar);
@@ -182,7 +228,7 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		return createHoverRequest(uri, line, kar);
 	}
 
-	String createHoverRequest(URI file, int line, int kar) {
+	public static String createHoverRequest(URI file, int line, int kar) {
 		String fileURI = ResourceUtils.fixURI(file);
 		return HOVER_TEMPLATE.replace("${file}", fileURI)
 				.replace("${line}", String.valueOf(line))
@@ -253,7 +299,8 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		// then
 		assertNotNull(hover);
 		String result = hover.getContents().getLeft().get(1).getLeft();//
-		assertEquals("Unexpected hover ", "This method comes from Foo", result);
+		String expected = "This method comes from Foo\n" + "\n" + " *  **Parameters:**\n" + "    \n" + "     *  **input** an input String";
+		assertEquals("Unexpected hover ", expected, result);
 	}
 
 	@Test
@@ -411,7 +458,7 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		project = WorkspaceHelper.getProject("salut");
 		handler = new HoverHandler(preferenceManager);
 		//given
-		String payload = createHoverRequest("src/main/java/java/Foo2.java", 44, 24);
+		String payload = createHoverRequest("src/main/java/java/Foo2.java", 44, 25);
 		TextDocumentPositionParams position = getParams(payload);
 
 		// when
@@ -422,11 +469,37 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		String content = null;
 		assertTrue("javadoc has null content", javadoc != null && javadoc.getLeft() != null && (content = javadoc.getLeft()) != null);
 
-		String expectedJavadoc = "This Javadoc contains a link to \\[newMethodBeingLinkedToo\\]\\(file:/.*/salut/src/main/java/java/Foo2.java#23\\)\n" + "\n" + " \\*  \\*\\*Parameters:\\*\\*\n" + "    \n"
-				+ "     \\*  \\*\\*someString\\*\\* the string to enter\n" + " \\*  \\*\\*Returns:\\*\\*\n" + "    \n" + "     \\*  String\n" + " \\*  \\*\\*Throws:\\*\\*\n" + "    \n" + "     \\*  IOException\n"
-				+ " \\*  \\*\\*Since:\\*\\*\n" + "    \n" + "     \\*  0.0.1\n" + " \\*  \\*\\*Version:\\*\\*\n" + "    \n" + "     \\*  0.0.1\n" + " \\*  \\*\\*Author:\\*\\*\n" + "    \n" + "     \\*  jpinkney\n"
-				+ " \\*  \\*\\*See Also:\\*\\*\n" + "    \n" + "     \\*  \\[Online docs for java\\]\\(https://docs.oracle.com/javase/7/docs/api/\\)";
-		assertMatches(expectedJavadoc, content);
+		//@formatter:off
+		String expectedJavadoc =
+				"This Javadoc contains a link to \\[newMethodBeingLinkedToo\\]\\(file:/.*/salut/src/main/java/java/Foo2.java#23\\)\n" +
+				"\n" +
+				" \\*  \\*\\*Parameters:\\*\\*\n" +
+				"    \n" +
+				"     \\*  \\*\\*someString\\*\\* the string to enter\n" +
+				" \\*  \\*\\*Returns:\\*\\*\n" +
+				"    \n" +
+				"     \\*  String\n" +
+				" \\*  \\*\\*Throws:\\*\\*\n" +
+				"    \n" +
+				"     \\*  IOException\n" +
+				" \\*  \\*\\*Since:\\*\\*\n" +
+				"    \n" +
+				"     \\*  0.0.1\n" +
+				" \\*  \\*\\*Version:\\*\\*\n" +
+				"    \n" +
+				"     \\*  0.0.1\n" +
+				" \\*  \\*\\*Author:\\*\\*\n" +
+				"    \n" +
+				"     \\*  jpinkney\n" +
+				" \\*  \\*\\*See Also:\\*\\*\n" +
+				"    \n" +
+				"     \\*  \\[Online docs for java\\]\\(https://docs.oracle.com/javase/7/docs/api/\\)\n" +
+				" \\*  \\*\\*API Note:\\*\\*\n" +
+				"    \n" +
+				"     \\*  This is a note";
+
+		//@formatter:on
+		assertMatches(expectedJavadoc, ResourceUtils.dos2Unix(content));
 	}
 
 	@Test
@@ -436,7 +509,7 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 		handler = new HoverHandler(preferenceManager);
 
 		//given
-		String payload = createHoverRequest("src/main/java/java/Foo2.java", 51, 25);
+		String payload = createHoverRequest("src/main/java/java/Foo2.java", 51, 26);
 		TextDocumentPositionParams position = getParams(payload);
 
 		// when
@@ -481,7 +554,9 @@ public class HoverHandlerTest extends AbstractProjectsManagerBasedTest {
 				"     *  java.sql.Driver\n" +
 				" *  **@moduleGraph**";
 		//@formatter:on
-		assertEquals("Unexpected hover ", expectedJavadoc, hover.getContents().getLeft().get(1).getLeft());
+		String actual = hover.getContents().getLeft().get(1).getLeft();
+		actual = ResourceUtils.dos2Unix(actual);
+		assertEquals("Unexpected hover ", expectedJavadoc, actual);
 	}
 
 	@Test

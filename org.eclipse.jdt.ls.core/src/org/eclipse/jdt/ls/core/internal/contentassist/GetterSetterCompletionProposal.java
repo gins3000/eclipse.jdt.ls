@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Originally copied from org.eclipse.jdt.internal.ui.text.java.GetterSetterCompletionProposal
  *
@@ -108,20 +110,20 @@ public class GetterSetterCompletionProposal extends InternalCompletionProposal {
 	 * @param offset
 	 * @param importRewrite
 	 * @param completionSnippetsSupported
+	 * @param addComments
 	 * @return
 	 * @throws CoreException
 	 * @throws BadLocationException
 	 */
-	public String updateReplacementString(IDocument document, int offset, ImportRewrite importRewrite, boolean completionSnippetsSupported) throws CoreException, BadLocationException {
+	public String updateReplacementString(IDocument document, int offset, ImportRewrite importRewrite, boolean completionSnippetsSupported, boolean addComments) throws CoreException, BadLocationException {
 		int flags= Flags.AccPublic | (fField.getFlags() & Flags.AccStatic);
-
 		String stub;
 		if (fIsGetter) {
 			String getterName= GetterSetterUtil.getGetterName(fField, null);
-			stub = GetterSetterUtil.getGetterStub(fField, getterName, true, flags);
+			stub = GetterSetterUtil.getGetterStub(fField, getterName, addComments, flags);
 		} else {
 			String setterName= GetterSetterUtil.getSetterName(fField, null);
-			stub = GetterSetterUtil.getSetterStub(fField, setterName, true, flags);
+			stub = GetterSetterUtil.getSetterStub(fField, setterName, addComments, flags);
 		}
 
 		// use the code formatter

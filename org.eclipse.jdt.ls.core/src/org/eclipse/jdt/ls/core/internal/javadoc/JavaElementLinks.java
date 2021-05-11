@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2008, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Code copied from org.eclipse.jdt.internal.ui.viewsupport.JavaElementLinks
  *
@@ -81,6 +83,8 @@ public class JavaElementLinks {
 	}
 
 	private static final char LINK_BRACKET_REPLACEMENT = '\u2603';
+
+	public static final String JAVADOC_SCHEME = "eclipse-javadoc"; //$NON-NLS-1$
 
 	/**
 	 * The link is composed of a number of segments, separated by LINK_SEPARATOR:

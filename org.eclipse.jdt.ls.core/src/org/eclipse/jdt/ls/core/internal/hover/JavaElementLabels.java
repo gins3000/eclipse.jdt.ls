@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -326,6 +328,9 @@ public final class JavaElementLabels {
 	 * User-readable string for the default package name (e.g. "(default package)").
 	 */
 	public final static String DEFAULT_PACKAGE= "(default package)";
+
+	public static final long LABEL_FLAGS = ALL_FULLY_QUALIFIED | M_PRE_RETURNTYPE | M_PARAMETER_ANNOTATIONS | M_PARAMETER_TYPES | M_PARAMETER_NAMES | M_EXCEPTIONS | F_PRE_TYPE_SIGNATURE | M_PRE_TYPE_PARAMETERS | T_TYPE_PARAMETERS
+			| USE_RESOLVED;
 
 	private JavaElementLabels() {
 	}

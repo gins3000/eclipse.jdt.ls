@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -11,13 +13,17 @@
 
 package org.eclipse.jdt.ls.core.internal.contentassist;
 
+import static org.eclipse.jdt.internal.corext.template.java.SignatureUtil.fix83600;
 import static org.eclipse.jdt.internal.corext.template.java.SignatureUtil.getLowerBound;
 
 import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -30,6 +36,10 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.eclipse.jdt.internal.codeassist.InternalCompletionProposal;
+import org.eclipse.jdt.internal.codeassist.impl.Engine;
+import org.eclipse.jdt.internal.compiler.lookup.Binding;
+import org.eclipse.jdt.internal.compiler.lookup.MethodBinding;
 import org.eclipse.jdt.internal.corext.template.java.SignatureUtil;
 import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
@@ -50,12 +60,14 @@ public final class SignatureHelpRequestor extends CompletionRequestor {
 	private final ICompilationUnit unit;
 	private CompletionProposalDescriptionProvider descriptionProvider;
 	private CompletionResponse response;
+	private Map<SignatureInformation, CompletionProposal> infoProposals;
 
 	public SignatureHelpRequestor(ICompilationUnit aUnit, int offset) {
 		this.unit = aUnit;
 		response = new CompletionResponse();
 		response.setOffset(offset);
 		setRequireExtendedContext(true);
+		infoProposals = new HashMap<>();
 	}
 
 	public SignatureHelp getSignatureHelp(IProgressMonitor monitor) {
@@ -66,7 +78,10 @@ public final class SignatureHelpRequestor extends CompletionRequestor {
 		List<SignatureInformation> infos = new ArrayList<>();
 		for (int i = 0; i < proposals.size(); i++) {
 			if (!monitor.isCanceled()) {
-				infos.add(this.toSignatureInformation(proposals.get(i)));
+				CompletionProposal proposal = proposals.get(i);
+				SignatureInformation signatureInformation = this.toSignatureInformation(proposal);
+				infoProposals.put(signatureInformation, proposal);
+				infos.add(signatureInformation);
 			} else {
 				return signatureHelp;
 			}
@@ -166,33 +181,42 @@ public final class SignatureHelpRequestor extends CompletionRequestor {
 		try {
 			IType type = unit.getJavaProject().findType(SignatureUtil.stripSignatureToFQN(String.valueOf(proposal.getDeclarationSignature())));
 			if (type != null) {
-				String[] parameters= Signature.getParameterTypes(String.valueOf(SignatureUtil.fix83600(proposal.getSignature())));
-				for (int i= 0; i < parameters.length; i++) {
-					parameters[i]= getLowerBound(parameters[i]);
-				}
-
-				IMethod method = JavaModelUtil.findMethod(String.valueOf(proposal.getName()), parameters, proposal.isConstructor(), type);
-
-				if (method != null && method.exists()) {
-					ICompilationUnit unit = type.getCompilationUnit();
-					if (unit != null) {
-						unit.reconcile(ICompilationUnit.NO_AST, false, null, null);
+				if (proposal instanceof InternalCompletionProposal) {
+					Binding binding = ((InternalCompletionProposal) proposal).getBinding();
+					if (binding instanceof MethodBinding) {
+						MethodBinding methodBinding = (MethodBinding) binding;
+						MethodBinding original = methodBinding.original();
+						char[] signature;
+						if (original != binding) {
+							signature = Engine.getSignature(original);
+						} else {
+							signature = Engine.getSignature(methodBinding);
+						}
+						String[] parameters = Signature.getParameterTypes(String.valueOf(fix83600(signature)));
+						for (int i = 0; i < parameters.length; i++) {
+							parameters[i] = getLowerBound(parameters[i]);
+						}
+						IMethod method = JavaModelUtil.findMethod(String.valueOf(proposal.getName()), parameters, proposal.isConstructor(), type);
+						if (method != null && method.exists()) {
+							ICompilationUnit unit = type.getCompilationUnit();
+							if (unit != null) {
+								unit.reconcile(ICompilationUnit.NO_AST, false, null, null);
+							}
+							String javadoc = null;
+							try {
+								javadoc = SimpleTimeLimiter.create(Executors.newCachedThreadPool()).callWithTimeout(() -> {
+									Reader reader = JavadocContentAccess.getPlainTextContentReader(method);
+									return reader == null ? null : CharStreams.toString(reader);
+								}, 500, TimeUnit.MILLISECONDS);
+							} catch (UncheckedTimeoutException tooSlow) {
+							} catch (Exception e) {
+								JavaLanguageServerPlugin.logException("Unable to read documentation", e);
+							}
+							return javadoc;
+						}
 					}
-
-					String javadoc = null;
-					try {
-						javadoc = new SimpleTimeLimiter().callWithTimeout(() -> {
-							Reader reader = JavadocContentAccess.getPlainTextContentReader(method);
-							return reader == null? null:CharStreams.toString(reader);
-						}, 500, TimeUnit.MILLISECONDS, true);
-					} catch (UncheckedTimeoutException tooSlow) {
-					} catch (Exception e) {
-						JavaLanguageServerPlugin.logException("Unable to read documentation", e);
-					}
-					return javadoc;
 				}
 			}
-
 		} catch (JavaModelException e) {
 			JavaLanguageServerPlugin.logException("Unable to resolve signaturehelp javadoc", e);
 		}
@@ -213,5 +237,9 @@ public final class SignatureHelpRequestor extends CompletionRequestor {
 			//meh
 		}
 		return null;
+	}
+
+	public Map<SignatureInformation, CompletionProposal> getInfoProposals() {
+		return infoProposals;
 	}
 }

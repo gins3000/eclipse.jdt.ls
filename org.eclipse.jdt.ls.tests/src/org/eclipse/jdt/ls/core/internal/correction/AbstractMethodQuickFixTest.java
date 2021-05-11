@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2017 Microsoft Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     Microsoft Corporation - initial API and implementation
@@ -67,7 +69,7 @@ public class AbstractMethodQuickFixTest extends AbstractQuickFixTest {
 		buf.append("}\n");
 		Expected e3 = new Expected("Remove method body", buf.toString());
 
-		assertCodeActions(cu, e1, e2, e2, e3);
+		assertCodeActions(cu, e1, e2, e3);
 	}
 
 	@Test
@@ -184,7 +186,7 @@ public class AbstractMethodQuickFixTest extends AbstractQuickFixTest {
 	}
 
 	@Test
-	public void testAbstarctMethodInEnum2() throws Exception {
+	public void testAbstractMethodInEnum2() throws Exception {
 		IPackageFragment pack = fSourceFolder.createPackageFragment("test", false, null);
 		StringBuilder buf = new StringBuilder();
 		buf.append("package test;\n");

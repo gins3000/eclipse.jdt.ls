@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2008, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Code copied from org.eclipse.jdt.internal.ui.text.javadoc.JavadocContentAccess2
  *
@@ -92,6 +94,7 @@ import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
 import org.eclipse.jdt.internal.corext.util.JdtFlags;
 import org.eclipse.jdt.internal.corext.util.MethodOverrideTester;
 import org.eclipse.jdt.internal.corext.util.SuperTypeHierarchyCache;
+import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 
 /**
@@ -128,6 +131,7 @@ public class JavadocContentAccess2 {
 	private static final String JavaDoc2HTMLTextReader_method_in_type = "{0}in{1}";
 	private static final String JavaDoc2HTMLTextReader_overrides_section = "Overrides:";
 	private static final String JavaDoc2HTMLTextReader_see_section = "See Also:";
+	private static final String JavaDoc2HTMLTextReader_api_note = "API Note:";
 	private static final String JavaDoc2HTMLTextReader_since_section = "Since:";
 	private static final String JavaDoc2HTMLTextReader_specified_by_section = "Specified by:";
 	private static final String JavaDoc2HTMLTextReader_version_section = "Version:";
@@ -587,7 +591,12 @@ public class JavadocContentAccess2 {
 		if (sourceJavadoc == null || sourceJavadoc.length() == 0 || sourceJavadoc.trim().equals("{@inheritDoc}")) { //$NON-NLS-1$
 			if (useAttachedJavadoc) {
 				if (element.getOpenable().getBuffer() == null) { // only if no source available
-					return element.getAttachedJavadoc(null);
+					try {
+						return element.getAttachedJavadoc(null);
+					} catch (Exception e) {
+						JavaLanguageServerPlugin.logException(e.getMessage(), e);
+						return null;
+					}
 				}
 				IMember member = null;
 				if (element instanceof ILocalVariable) {
@@ -1007,6 +1016,7 @@ public class JavadocContentAccess2 {
 		List<TagElement> sees = new ArrayList<>();
 		List<TagElement> since = new ArrayList<>();
 		List<TagElement> rest = new ArrayList<>();
+		List<TagElement> apinote = new ArrayList<>(1);
 
 		List<TagElement> tags = fJavadoc.tags();
 		for (Iterator<TagElement> iter = tags.iterator(); iter.hasNext();) {
@@ -1078,6 +1088,8 @@ public class JavadocContentAccess2 {
 				if (deprecatedTag == null) {
 					deprecatedTag = tag; // the Javadoc tool only shows the first deprecated tag
 				}
+			} else if (TagElement.TAG_API_NOTE.equals(tagName)) {
+				apinote.add(tag);
 			} else {
 				rest.add(tag);
 			}
@@ -1114,7 +1126,7 @@ public class JavadocContentAccess2 {
 		boolean hasInheritedExceptions = inheritExceptionDescriptions(exceptionNames, exceptionDescriptions);
 		boolean hasExceptions = exceptions.size() > 0 || hasInheritedExceptions;
 
-		if (hasParameters || hasTypeParameters || hasReturnTag || hasExceptions || versions.size() > 0 || authors.size() > 0 || since.size() > 0 || sees.size() > 0 || rest.size() > 0
+		if (hasParameters || hasTypeParameters || hasReturnTag || hasExceptions || versions.size() > 0 || authors.size() > 0 || since.size() > 0 || sees.size() > 0 || rest.size() > 0 || apinote.size() > 0
 				|| (fBuf.length() > 0 && (parameterDescriptions.length > 0 || exceptionDescriptions.length > 0))) {
 			handleSuperMethodReferences();
 			fBuf.append(BLOCK_TAG_START);
@@ -1126,6 +1138,7 @@ public class JavadocContentAccess2 {
 			handleBlockTags(JavaDoc2HTMLTextReader_version_section, versions);
 			handleBlockTags(JavaDoc2HTMLTextReader_author_section, authors);
 			handleBlockTags(JavaDoc2HTMLTextReader_see_section, sees);
+			handleBlockTags(JavaDoc2HTMLTextReader_api_note, apinote);
 			handleBlockTags(rest);
 			fBuf.append(BLOCK_TAG_END);
 
@@ -1456,6 +1469,10 @@ public class JavadocContentAccess2 {
 			previousNode = child;
 			if (child instanceof TextElement) {
 				String text = ((TextElement) child).getText();
+				if (JavaDocHTMLPathHandler.containsHTMLTag(text)) {
+					text = JavaDocHTMLPathHandler.getValidatedHTMLSrcAttribute((TextElement) child, fElement);
+				}
+
 				if (skipLeadingWhitespace) {
 					text = text.replaceFirst("^\\s", ""); //$NON-NLS-1$ //$NON-NLS-2$
 				}
@@ -1882,6 +1899,7 @@ public class JavadocContentAccess2 {
 			}
 		}
 		fBuf.append(BLOCK_TAG_END);
+		fBuf.append(BlOCK_TAG_ENTRY_END);
 	}
 
 	private void handleThrowsTag(TagElement tag) {
@@ -1917,6 +1935,7 @@ public class JavadocContentAccess2 {
 			String name = parameterNames.get(i);
 			if (name != null) {
 				fBuf.append(BLOCK_TAG_START);
+				fBuf.append(BlOCK_TAG_ENTRY_START);
 				fBuf.append(PARAM_NAME_START);
 				if (isTypeParameters) {
 					fBuf.append("&lt;"); //$NON-NLS-1$
@@ -1929,9 +1948,12 @@ public class JavadocContentAccess2 {
 				if (description != null) {
 					fBuf.append(description);
 				}
+				fBuf.append(BlOCK_TAG_ENTRY_END);
 				fBuf.append(BLOCK_TAG_END);
 			}
 		}
+
+		fBuf.append(BlOCK_TAG_ENTRY_END);
 	}
 
 	private void handleParamTag(TagElement tag) {

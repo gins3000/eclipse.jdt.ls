@@ -1,9 +1,11 @@
 /*******************************************************************************
  * Copyright (c) 2000, 2018 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
+ * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -21,9 +23,9 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.VariableDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.internal.core.manipulation.BindingLabelProviderCore;
 import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
 import org.eclipse.jdt.internal.corext.dom.ASTNodeFactory;
-import org.eclipse.jdt.ls.core.internal.BindingLabelProvider;
 import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
 
 /**
@@ -33,7 +35,7 @@ import org.eclipse.jdt.ls.core.internal.hover.JavaElementLabels;
  */
 public class ASTResolving extends org.eclipse.jdt.internal.core.manipulation.dom.ASTResolving {
 	public static String getMethodSignature(IMethodBinding binding) {
-		return BindingLabelProvider.getBindingLabel(binding, BindingLabelProvider.DEFAULT_TEXTFLAGS);
+		return BindingLabelProviderCore.getBindingLabel(binding, BindingLabelProviderCore.DEFAULT_TEXTFLAGS);
 	}
 
 	public static String getMethodSignature(String name, ITypeBinding[] params, boolean isVarArgs) {
@@ -55,7 +57,7 @@ public class ASTResolving extends org.eclipse.jdt.internal.core.manipulation.dom
 	}
 
 	public static String getTypeSignature(ITypeBinding type) {
-		return BindingLabelProvider.getBindingLabel(type, BindingLabelProvider.DEFAULT_TEXTFLAGS);
+		return BindingLabelProviderCore.getBindingLabel(type, BindingLabelProviderCore.DEFAULT_TEXTFLAGS);
 	}
 
 	public static Type guessTypeForReference(AST ast, ASTNode node) {
